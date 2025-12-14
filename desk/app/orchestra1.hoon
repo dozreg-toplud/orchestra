@@ -68,10 +68,104 @@
 +$  state  [persistent transient-state]
 +$  card  card:agent:gall
 +$  sign  sign:agent:gall
-+$  poll-responder-yield  [diff=(unit state-diff) new=persistent]
++$  poll-payload
+  $%  [%diff d=state-diff]
+      [%message m=message]
+  ==
+::
++$  poll-responder-yield  [load=(unit poll-payload) new=persistent]
++$  message
+  $%  [%error why=@t what=tang]
+  ==
+::
++$  request-to-validate
+  $%  [%action a=action-to-validate]
+      [%read r=read]  ::  XX use http scry?
+  ==
+::
++$  request
+  $%  [%action a=action]
+      [%read r=read]  ::  XX use http scry?
+  ==
+::
++$  request-error  (each request tang)
++$  read
+  $%  [%product id=strand-id]
+  ==
+::
++$  action-to-validate
+  $%  $>(?(%del %wipe %run %clear %stop) action)
+      [%new id-txt=cord lang=cord txt=cord]
+      [%upd id=strand-id txt=cord]
+  ==
 --
 ::  lib core
 |%
+++  apply-rule
+  |*  m=mold
+  |=  [bus=$-(nail (like m)) txt=cord fail=cord]
+  ^-  (each m tang)
+  =/  [=hair res=(unit [out=m =nail])]  (bus [1 1] (trip txt))
+  ?~  res  |+[fail (report-parser-fail hair txt)]
+  &+out.u.res
+::
+++  biff-each
+  |*  m1=mold
+  |*  [a=(each m1 tang) b=$-(m1 (each * tang))]
+  ?:  ?=(%| -.a)  a
+  (b p.a)
+::
+++  validate-request
+  |=  r=request-to-validate
+  ^-  request-error
+  ?-    -.r
+      %read  &+r
+  ::
+      %action
+    ?-    -.a.r
+        ?(%del %wipe %run %clear %stop)  &+r
+    ::
+        %new
+      ;<  id=strand-id  biff-each
+        =/  e  'syntax error in thread name:'
+        ((apply-rule strand-id) stap id-txt.a.r e)
+      ::
+      ;<  src-param=[strand-source strand-params]  biff-each
+        =/  e  'syntax error in thread name:'
+        =/  rule  (source-params-rule lang.a.r)
+        ((apply-rule (pair strand-source strand-params)) rule txt.a.r e)
+      ::
+      &+[%action %new id src-param]
+    ::
+        %upd
+      ;<  params=strand-params  biff-each
+        =/  e  'syntax error in script parameters:'
+        ((apply-rule strand-params) strand-params-rule txt.a.r e)
+      ::
+      &+[%action %upd id.a.r params]
+    ==
+  ==
+::
+++  apply-tail
+  |*  g=gate
+  |*  sam=^
+  [-.sam (g +.sam)]
+::
+++  await-earliest
+  |*  a=mold
+  =/  m  (strand:rand ,a)
+  |=  l=(list form:m)
+  ^-  form:m
+  |=  tin=strand-input:rand
+  ?~  in.tin  `[%wait ~]
+  =/  o=output:m  `[%skip ~]
+  |-  ^-  output:m
+  ?~  l  o
+  =/  o1  (i.l tin)
+  ?.  ?=(%skip -.next.o1)
+    [(weld cards.o cards.o1) next.o1]
+  $(l t.l, cards.o (weld cards.o cards.o1))
+::
 ++  report-parser-fail
   |=  [=hair txt=cord]
   ^-  tang
@@ -102,6 +196,13 @@
   %+  join  `(list tape)`~["\0a"]
   ^-  (list (list tape))
   (turn tang (cury wash 0 80))
+::
+++  render-vase
+  |=  =vase
+  ^-  tape
+  %-  zing
+  %+  join  "\0a"
+  (wash 0^80 (cain vase))
 ::
 ++  render-source-cord
   |=  src=strand-source
@@ -146,6 +247,7 @@
 ++  get-strand-diff
   |=  [old=(map strand-id strand-state) new=(map strand-id strand-state)]
   ^-  strand-diff
+  ?:  =(old new)  ~
   =/  gone  (~(dif by old) new)
   =/  plus  (~(dif by new) old)
   =/  edit  ~(key by (~(int by old) new))
@@ -154,7 +256,9 @@
     |=  [k=strand-id acc=strand-diff]
     =/  old  (~(got by old) k)
     =/  new  (~(got by new) k)
-    (~(put by acc) k %edit (get-strand-state-diff old new))
+    =/  d=strand-state-diff  (get-strand-state-diff old new)
+    ?:  =(~ d)  acc
+    (~(put by acc) k %edit d)
   ::
   %.  `strand-diff`(~(run by plus) (lead %new))
   %~  uni  by
@@ -165,8 +269,7 @@
 ++  get-strand-state-diff
   |=  [old=strand-state new=strand-state]
   ^-  strand-state-diff
-  =-  ?>  ?=(^ -)  -
-  ^-  strand-state-diff
+  ?:  =(old new)  ~
   =|  out=strand-state-diff
   =*  put  ~(put in out)
   =?  out  !=(src.old src.new)                (put %source src.new)
@@ -178,6 +281,7 @@
   =*  products  ,(map strand-id (pair (each vase tang) time))
   |=  [old=products new=products]
   ^-  product-diff
+  ?:  =(old new)  ~
   =/  sub  (~(dif by old) new)
   =/  out=product-diff  (~(run by sub) _[%del ~])
   %-  ~(rep by new)
@@ -190,6 +294,15 @@
 ++  enjs
   =,  enjs:format
   |%
+  ++  message
+    |=  m=^message
+    ^-  json
+    %-  frond
+    :-  -.m
+    ?-  -.m
+      %error  (pairs why+s+why.m what+s+(crip (render-tang what.m)) ~)
+    ==
+  ::
   ++  state
     |=  s=persistent
     ^-  json
@@ -207,7 +320,15 @@
     |=  [k=strand-id v=(pair (each vase tang) @da)]
     ^-  [@t json]
     :-  (spat k)
-    (urtime-sec q.v)
+    (product v)
+  ::
+  ++  product
+    |=  p=(pair (each vase tang) @da)
+    ^-  json
+    %-  pairs
+    :~  when+(urtime-sec q.p)
+        how+[%b -.p.p]
+    ==
   ::
   ++  diff
     |=  d=state-diff
@@ -304,6 +425,96 @@
       %running  b+flag.d
     ==
   --
+::
+++  dejs
+  =,  dejs:format
+  |%
+  ++  request-to-validate
+    ^-  $-(json ^request-to-validate)
+    %-  of
+    :~  action+action-to-validate
+        read+read
+    ==
+  ::
+  ++  read
+    ^-  $-(json ^read)
+    %-  of
+    :~  product+strand-id
+    ==
+  ::
+  ++  action-to-validate
+    ^-  $-(json ^action-to-validate)
+    %-  of
+    :~  new+(ot id+so lang+so txt+so ~)
+        upd+(ot id+strand-id params+so ~)
+        del+strand-id
+        wipe+ul
+        run+strand-id
+        :: run-defer
+        clear+strand-id
+        stop+strand-id
+    ==
+  ::
+  ++  strand-id  pa
+  --
+::
+++  source-params-rule
+  |=  lang=cord
+  %+  cook  |=([strand-source strand-params] +<)
+  %+  cook  |*(sam=* [+.sam -.sam])
+  ;~  plug
+    strand-params-rule
+  ::
+    %+  cook  |=(strand-source +<)
+    ?+    lang  ~|(%weird-lang !!)
+        %hoon
+      %+  stag  %hoon
+      ;~  plug
+        deps-rule
+        (cook crip (star next))
+      ==
+    ::
+        %js
+      %+  stag  %js
+      (cook crip (star next))
+    ==
+  ==
+::
+++  strand-params-rule
+  %+  cook  |=(strand-params +<)
+  ;~  pose
+    (stag ~ (ifix [gay gay] ;~(pfix (jest '@@') gap dr-rule)))
+    (easy ~)
+  ==
+::
+++  dr-rule
+  ;~  pfix
+    sig
+  ::
+    %-  sear
+    :_  crub:so
+    |=  d=dime
+    ^-  (unit @dr)
+    ?.  ?=(%dr p.d)  ~
+    `q.d
+  ==
+::
+++  deps-rule
+  %+  cook  |=((list (pair term path)) +<)
+  ;~  pose
+    %+  ifix  [gay gay]
+    %+  cook  |=((list (list (pair term path))) (zing +<))
+    %+  most  gap
+    %+  cook  |=((list (pair term path)) +<)
+    ;~  pfix
+      (jest '##')
+      gap
+      (most (jest ', ') ;~((glue tis) sym stap))
+    ==
+  ::
+    (easy ~)
+  ==
+::
 ++  set-running-flag
   |=  =flag
   ^-  $-(strand-state strand-state)
@@ -546,7 +757,7 @@
         ?.  =(suspend suspend-counter.state)
           `this
         ?>  ?=([%khan %arow *] sign-arvo)
-        =^  response=json  this
+        =^  response=(unit json)  this
           =,  enjs:format
           ?:  ?=(%| -.p.sign-arvo)
             ~&  %polling-responder-failure
@@ -554,15 +765,26 @@
               (~(put by polling.state) stamp |+persistent-state)
             ::
             :_  this
-            (frond %full (state:enjs persistent-state))
+            `(frond %full (state:enjs persistent-state))
           =+  !<(yil=poll-responder-yield q.p.p.sign-arvo)
           =.  polling.state  (~(put by polling.state) stamp |+new.yil)
-          ?~  diff.yil  [~ this]
           :_  this
-          (diff:enjs u.diff.yil)
+          ^-  (unit json)
+          ?~  load.yil  ~
+          ?-    -.u.load.yil
+              %diff
+            :: `(diff:enjs u.diff)
+            ::  XX just send the whole state for now, it's not that big
+            ::
+            `(frond:enjs:format %full (state:enjs persistent-state))
+          ::
+              %message
+            `(frond %message (message:enjs m.u.load.yil))
+          ==
         ::
         :_  this
-        (response:schooner eyre-id.wire 200 ~ json+response)
+        ?~  response  (response:schooner eyre-id.wire 204 ~ json+~)
+        (response:schooner eyre-id.wire 200 ~ json+u.response)
       ::
           [%cleanup suspend=@ta ~]
         =/  suspend-counter  (slav %ud suspend.wire)
@@ -659,7 +881,7 @@
       ::
           [%apps name-mold %poll time=@ta ~]
         ?.  authenticated.inbound-request  `state
-        =/  stamp=time  (slav %da time.site)
+        =/  stamp=time  (slav %ui time.site)
         =^  jon=(unit json)  state
           ?~  stash=(~(get by polling.state) stamp)
             ~&  %first-poll
@@ -670,55 +892,75 @@
             `(frond:enjs:format %full (state:enjs persistent-state))
           :_  state
           ?~  diff=(get-state-diff s.u.stash persistent-state)  ~
-          `(diff:enjs u.diff)
+          :: `(diff:enjs u.diff)
+          ::  XX just send the whole state for now, it's not that big
+          ::
+          `(frond:enjs:format %full (state:enjs persistent-state))
         ::
         :_  state
         ?^  jon  (send [200 ~ json+u.jon])
         (dispatch-poll-responder eyre-id persistent-state stamp)
       ::
-          [%apps name-mold %product ~]
+          [%apps name-mold %api ~]
         ?.  authenticated.inbound-request  `state
         ?~  body.request.inbound-request   `state
-        =/  id=(unit strand-id)
-          (parse-request-product q.u.body.request.inbound-request)
+        ~&  `@t`q.u.body.request.inbound-request
+        =/  jin=json  (need (de:json:html q.u.body.request.inbound-request))
+        =/  rev=request-to-validate  (request-to-validate:dejs jin)
+        =/  rer=request-error  (validate-request rev)
+        ?:  ?=(%| -.rer)
+          =/  jon=json  (frond:enjs:format %error s+(crip (render-tang p.rer)))
+          [(send [200 ~ json+jon]) state]
+        =/  req=request  p.rer
+        ?-    -.req
+            %action  (take-action a.req)
         ::
-        =;  jon=json  [(send [200 ~ json+jon]) state]
-        ?~  id  ~
-        ?~  pro=(~(get by products.state) u.id)  ~  ::  null
-        =/  rand  (~(get by strands.state) u.id)
-        =-  [%o ['u' s+-] ~ ~]                      ::  {u: string}
-        %-  crip
-        %+  weld  "{(scow %da (dis q.u.pro seconds-mask))}\0a"
-        ^-  tape
-        ?:  |(?=(~ rand) ?=(%hoon -.src.u.rand))
-          ?:  ?=(%| -.p.u.pro)
-            %+  weld  "Error:\0a"
-            (render-tang p.p.u.pro)
-          %+  weld  "Success:\0a"
-          ^-  tape
-          (zing (join "\0a" (wash 0^80 (cain p.p.u.pro))))
-        ::  (-.src.u.rand == %js)
-        ::
-        ?:  ?=(%| -.p.u.pro)
-          %+  weld  "Thread error:\0a"
-          (render-tang p.p.u.pro)
-        =/  js-res
-          %-  mole  |.
-          !<  [%0 out=(each cord (pair cord cord))]
-          p.p.u.pro
-        ::
-        ?~  js-res  "Unrecognized JS result"
-        =/  out  out.u.js-res
-        ?-    -.out
-            %&
-          "Success:\0a{(trip p.out)}"
-        ::
-            %|
-          "JS error:\0a{(trip p.p.out)}\0a{(trip q.p.out)}"
+            %read
+          =/  jon=json  (handle-read-http r.req)
+          [(send [200 ~ json+jon]) state]
         ==
       ==
     ==
   ::
+  ++  handle-read-http
+    |=  r=read
+    ^-  json
+    ?-    -.r
+        %product
+      ?~  pro=(~(get by products.state) id.r)  ~  ::  null
+      =/  rand  (~(get by strands.state) id.r)
+      =-  [%o ['result' s+-] ~ ~]                 ::  {result: string}
+      ^-  cord
+      %-  crip
+      %+  weld  "{(scow %da (dis q.u.pro seconds-mask))}\0a"
+      ^-  tape
+      ?:  |(?=(~ rand) ?=(%hoon -.src.u.rand))
+        ?:  ?=(%| -.p.u.pro)
+          %+  weld  "Error:\0a"
+          (render-tang p.p.u.pro)
+        %+  weld  "Success:\0a"
+        (render-vase p.p.u.pro)
+      ::  (-.src.u.rand == %js)
+      ::
+      ?:  ?=(%| -.p.u.pro)
+        %+  weld  "Thread error:\0a"
+        (render-tang p.p.u.pro)
+      =/  js-res
+        %-  mole  |.
+        !<  [%0 out=(each cord (pair cord cord))]
+        p.p.u.pro
+      ::
+      ?~  js-res  "Unrecognized JS result"
+      =/  out  out.u.js-res
+      ?-    -.out
+          %&
+        "Success:\0a{(trip p.out)}"
+      ::
+          %|
+        "JS error:\0a{(trip p.p.out)}\0a{(trip q.p.out)}"
+      ==
+    ==
+
   ++  dispatch-poll-responder
     |=  [eyre-id=@ta stash=persistent stamp=@da]
     ^-  (list card)
@@ -740,41 +982,506 @@
       =/  m  (strand poll-responder-yield)
       ^-  form:m
       =/  wir=wire  /state-updates
-      ;<  ~        bind:m
-        (watch-our:sio wir name-term wir)
-      ::
+      ;<  ~        bind:m  (watch-our:sio wir name-term wir)
       ;<  now=@da  bind:m  get-time:sio
       =/  till=@da  (add now ~s15)
       ;<  ~  bind:m  (send-wait:sio till)
-      |=  tin=strand-input:rand
-      =*  this-strand  .
-      ?+    in.tin  `[%skip ~]
-          ~
-        `[%wait ~]
+      |-  ^-  form:m
+      %-  (await-earliest poll-responder-yield)
+      :~
+        ;<  ~  bind:m  (take-wake:sio `till)
+        (pure:m ~ stash)
       ::
-          [~ %sign [%wait @ ~] %behn %wake *]
-        ?.  =(till (slaw %da i.t.wire.u.in.tin))
-          ~&  >>  [till (slaw %da i.t.wire.u.in.tin)]
-          `[%skip ~]
-        ~?  >>>  ?=(^ error.sign-arvo.u.in.tin)  u.error.sign-arvo.u.in.tin
-        `[%done ~ stash]
-      ::
-          [~ %agent * %fact *]
-        ?.  =(watch+wir wire.u.in.tin)
-          ~&  >>  wire.u.in.tin
-          `[%skip ~]
-        =/  vax=vase  q.cage.sign.u.in.tin
-        =+  !<(new=persistent vax)
-        ?~  diff=(get-state-diff stash new)
-          `[%cont this-strand(stash new)]
-        `[%done diff new]
+        ;<  =cage  bind:m  (take-fact:sio wir)
+        ?+    p.cage  ~|(%weird-mark !!)
+            %state
+          =+  !<(new=persistent q.cage)
+          ?~  diff=(get-state-diff stash new)
+            $(stash new)
+          (pure:m `[%diff u.diff] new)
+        ::
+            %message
+          =+  !<(msg=message q.cage)
+          (pure:m `[%message msg] stash)
+        ==
       ==
     ::
     (pure:m !>(res))
+  ::
   ++  form
     |=  stamp=time
     ^-  manx
-    stub
+    ;html
+      ;head
+        ;meta(charset "UTF-8");
+        ;meta(name "viewport", content "width=device-width, initial-scale=1.0");
+        ;title: Orchestra
+        ;style: {style}
+      ==
+    ::
+      ;body
+        ;select#choose-thread(name "choose-thread", onchange "updateView()", form "control-form")
+          ;option(value ""): --Select--
+        ==
+      ::
+        ;pre#script-box
+          ;+  ;/  "Script will appear here..."
+        ==
+      ::
+        ;form#control-form
+          ;div#control-row
+            ;span#status-led.status-led(data-status "", title "", data-tooltip "No status")
+              ;span.light;
+            ==
+          ::
+            ;button#delete(type "button", onclick "delete()"): Delete  <<<<<< CONTINUE HERE
+            ;button#show-result(type "button", onclick "showResult()"): Load result
+            ;div#update-params
+              ;input#schedule-field
+                =name         "schedule-time"
+                =type         "text"
+                =placeholder  "~d1"
+                =maxlength    "7"
+                ;
+              ==
+            ::
+              ;button#update-schedule(name "action", type "button", onclick "updateParams()"): Update
+            ==
+          ::
+            ;button#update-schedule(name "action", type "button", onclick "clearProduct()"): Clear product
+            ;button#update-schedule(name "action", type "button", onclick "run()"): Run
+          ==
+        ==
+      ::
+        ;div#message-control(hidden "");
+        ;div#error-control(hidden "");
+        ;br;  ;br;
+        ;h1: Add a new script
+        ;form#upload-form
+          ;div#upload-row
+            ;textarea#script-name
+              =name  "script-name"
+              =cols  "30"
+              =rows  "1"
+              =placeholder  "/thread/name"
+              ;
+            ==
+          ::
+            ;select#language-choice(name "language-choice", onchange "updatePlaceholder()")
+              ;option(value "hoon"): Hoon
+              ;option(value "js"): JavaScript
+            ==
+          ::
+            ;input#overwrite-checkbox(type "checkbox");
+            ;label(for "overwrite-checkbox"): overwrite
+          ==
+        ::
+          ;textarea#script-text
+            =name  "script-text"
+            =cols  "80"
+            =rows  "20"
+            =placeholder  """
+                          @@  ~h1                   ::  schedule, optional @da
+                          ##  name=/desk/path/hoon  ::  comma-separated imports, optional
+                          ::
+                          ...
+                          """
+            ;
+          ==
+        ::
+          ;div#error-submit(hidden "");
+          ;br;
+          ;button(type "button", name "action", onclick "sendScript()"): Send
+        ==
+      ::
+        ;script: {(js-code stamp)}
+      ==
+    ==
+  ::
+  ++  js-code
+    |=  stamp=time
+    ^-  tape
+    %+  weld
+      """
+      const PollUrl = '{(trip our-url)}/poll/{(scow %ui stamp)}';\0a
+      const APIUrl = '{(trip our-url)}/api';\0a
+      """
+    =>  ..trip
+    ^~  %-  trip
+    '''
+    //  state mirror
+    //
+    //  Scripts: script_id: string => {src: string,
+    //                                 running: bool,
+    //                                 params: {run_every: string},
+    //                                 fires: null | string,
+    //                                 has_product: null
+    //                                              | {success: bool,
+    //                                                 when: string
+    //                                                }
+    //                                }
+    //
+    let Scripts = {};
+    const Tips = {
+      red: 'Script failed last run',
+      green: 'Script returned sucessfully',
+      yellow: 'Script still runnning',
+      gray: 'Script not runnning',
+      black: 'Script not found',
+    };
+    const div_message_control  = document.getElementById('message-control');
+    const div_error_control    = document.getElementById('error-control');
+    const div_error_submit     = document.getElementById('error-submit');
+    const select_script        = document.getElementById('choose-thread');
+    const pre_display_source   = document.getElementById('script-box');
+    const textarea_edit_source = document.getElementById('script-text');
+    const select_language      = document.getElementById('language-choice');
+    const span_LED             = document.getElementById('status-led');
+    const form_control         = document.getElementById('control-form');
+    const form_upload          = document.getElementById('upload-form');
+    
+    function updateView() {
+      const current_key = select_script.value;
+      let color = 'white';
+      let is_blinking = false;
+      let tooltip = 'No status';
+      let textbox_content = 'Script will appear here...';
+      if ( current_key && Scripts[current_key] ) {
+        let script = Scripts[current_key];
+        textbox_content = script.src;
+        color = ( script.running )              ? 'yellow'
+              : ( script.has_product === null ) ? 'gray'
+              : ( script.has_product.success )  ? 'green'
+              : 'red';
+        is_blinking = (script.fires !== null) && (color !== 'yellow');
+        tooltip = tips[color] + (( is_blinking ) ? ", awaiting timer" : "");
+        if (textBox.textContent !== textbox_content) {
+          textBox.textContent = textbox_content;
+        }
+      }
+      span_LED.setAttribute('data-status', color);
+      span_LED.setAttribute('data-tooltip', tooltip);
+      span_LED.classList.toggle('blinking', is_blinking);
+    }
+
+    function updateLangPlaceholder() {
+      const lang = select_language.value;
+      if ('js' == lang) \{
+        textScript.placeholder = `@@  ~h1  //  schedule, optional @da
+    const urbit = require("urbit_thread");
+    module.exports = () => \{
+      console.log("Hello");
+      return "done";
+    }`;
+      }
+      else \{
+        textScript.placeholder = `@@  ~h1                   ::  schedule, optional @da
+    ##  name=/desk/path/hoon  ::  comma-separated imports, optional
+    ::
+    ...
+    `;
+      }
+    }
+
+    async function showResult() {
+      const current_key = select_script.value || '';
+      if ( !key ) {
+        div_message_control.setAttribute('hidden', '');
+        div_message_control.textContent = '';
+        return;
+      }
+      try {
+        const response = await fetch(APIUrl, {
+          method: 'POST',
+          body: JSON.stringify({
+            read: {product: current_key}
+          })
+        });
+        if ( !response.ok ) {
+          console.error('HTTP error: ' response.status);
+        }
+        else {
+          const data = await response.json();
+          if ( null === data ) {
+            div_message_control.setAttribute('hidden', '');
+            div_message_control.textContent = '';
+            return;
+          }
+          else {
+            div_message_control.textContent = data.result;
+            div_product.removeAttribute('hidden');
+          }
+        }
+      } catch (e) {
+        console.error('Network error:', e);
+      }
+    }
+
+    function updateChoiceView() {
+      const keys = Object.keys(Scripts).sort();
+      const prev = select_script.value;
+      select_script.replaceChildren(
+        new Option('--Select--', '', true, true),
+        ...keys.map(v => new Option(v, v))
+      );
+      if (keys.includes(prev)) {
+        select_script.value = prev;
+      }
+      select_script.options[0].disabled = true;
+      updateView();
+    }
+    
+    async function longPoll() {
+      try {
+        const res = await fetch(PollUrl, { cache: 'no-store' });
+        if (res.status === 204) return;
+        const payload = await res.json();
+        if ( payload === null ) return;
+        if ( payload.full ) {
+          Scripts = {};
+          const strands = payload.full.strands;
+          const products = payload.full.products;
+          for (const [key, value] of Object.entries(strands)) {
+            Scripts[key] = {src: value.source,
+              running: value.running,
+              params: value.params,
+              has_product: null};
+          }
+          for (const [key, value] of Object.entries(products)) {
+            if ( Scripts[key] !== undefined ) {
+              Scripts[key].has_product = {success: value.how, when: value.when};
+            }
+          }
+          updateChoiceView();
+        }
+        else if ( payload.message ) {
+          if ( payload.message.error ) {
+            console.error(payload.message.error.why);
+            console.error(payload.message.error.what);
+          }
+        }
+      } catch (e) {
+        await new Promise(r => setTimeout(r, 2000));
+      } finally {
+        longPoll();
+      }
+    }
+    longPoll();
+    '''
+  ::
+  ++  style
+    =>  ..trip
+    ^~  %-  trip
+    '''
+    [hidden] { display: none !important; }
+    body {
+      font-family: monospace;
+      background: #fafafa;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      margin: 20px;
+      margin: 0;
+      margin-top: 40px;
+    }
+    select {
+      padding: 8px 12px;
+      font-size: 1em;
+      margin-bottom: 20px;
+      border-radius: 6px;
+      border: 1px solid #ccc;
+      background-color: white;
+    }
+    pre {
+      width: 80ch;
+      max-width: 80ch;
+      min-width: 80ch;
+      font-family: monospace;
+      font-size: 1.5em;
+      background: #f7f7f7;
+      border: 1px solid #ccc;
+      border-radius: 6px;
+      padding: 10px;
+      white-space: pre;
+      overflow-x: auto;
+      overflow-y: auto;
+      margin: 0;      
+    }
+    h2 {
+      margin-bottom: 10px;
+      text-align: center;
+    }
+    #script-text {
+      font-family: monospace;
+      font-size: 1.5em;
+      width: 80ch;
+      height: 20em;
+      resize: none;
+      overflow: auto;
+      border: 1px solid #ccc;
+      border-radius: 6px;
+      background: #f7f7f7;
+      padding: 10px;
+      display: block;
+      margin: 10px auto;
+      white-space: pre;
+      overflow-x: auto;
+      overflow-y: auto;
+    }
+    #script-name {
+      width: 30ch;
+      height: 2.25em;
+      font-family: monospace;
+      font-size: 1.5em;
+      resize: none;
+      overflow: hidden;
+      padding: 5px 8px;
+      border: 1px solid #ccc;
+      border-radius: 6px;
+      background: #f7f7f7;
+      display: block;
+      margin: 10px auto;
+    }
+    button {
+      font-size: 0.9em;
+      padding: 10px 20px;
+      border-radius: 6px;
+      border: 1px solid #888;
+      background-color: #f0f0f0;
+      cursor: pointer;
+    }
+    button:hover {
+      background: #e0e0e0;
+    }
+    #error-message {
+      margin-top: 5px;
+      width: 80ch;
+      background-color: #ffe6e6;
+      color: #900;
+      border: 1px solid #f5b5b5;
+      border-radius: 4px;
+      padding: 6px 10px;
+      font-size: 1.5em;
+      font-family: monospace;
+      white-space: pre-wrap;
+    }
+    #show-product {
+      //  display: none;
+      margin-top: 5px;
+      width: 80ch;
+      background-color: #f0f0f0;
+      border: 1px solid #888;
+      border-radius: 4px;
+      padding: 6px 10px;
+      font-size: 1.5em;
+      font-family: monospace;
+      white-space: pre-wrap;
+    }
+    #control-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      width: 120ch;
+      margin-top: 10px;
+      gap: 10px;
+    }
+    #upload-row {
+      display: flex;
+      align-items: baseline;
+      justify-content: flex-start;
+      gap: 10px;
+      width: 80ch;
+      margin-top: 10px;
+    }
+    #script-name {
+      height: auto;
+      padding-top: 4px;
+      padding-bottom: 4px;
+    }
+    #language-choice {
+      font-size: 1.0em;
+      padding: 6px 10px;
+      border-radius: 6px;
+      border: 1px solid #ccc;
+      background-color: #f7f7f7;
+    }
+    #control-row button {
+      font-size: 0.9em;
+      padding: 6px 14px;
+      border: 1px solid #aaa;
+      border-radius: 6px;
+      background-color: #f0f0f0;
+      cursor: pointer;
+    }
+
+    #control-row button:hover {
+      background-color: #e0e0e0;
+    }
+
+    #update-params {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    #schedule-field {
+      width: 7ch;
+      font-family: monospace;
+      font-size: 0.9em;
+      padding: 4px 6px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+    }
+    .status-led {
+      --led-size: 12px;
+      width: var(--led-size);
+      height: var(--led-size);
+      border-radius: 50%;
+      display: inline-block;
+      border: 1px solid #666;
+      box-shadow:
+        0 0 0 2px rgba(0,0,0,0.05) inset,
+        0 0 6px rgba(0,0,0,0.2);
+      position: relative;
+    }
+    .status-led .light {
+      width: 100%;
+      height: 100%;
+      border-radius: 50%;
+      display: block;
+    }
+    .status-led::after {
+      content: attr(data-tooltip);
+      position: absolute;
+      left: 50%;
+      top: -40px;
+      transform: translateX(-50%);
+      padding: 4px 8px;
+      background: #222;
+      color: #fff;
+      font-size: 0.8em;
+      border-radius: 6px;
+      white-space: nowrap;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 120ms ease;
+    }
+    .status-led:hover::after { opacity: 1; }
+    .status-led[data-status="green"]  .light { background: #23c552; box-shadow: 0 0 8px #23c552; }
+    .status-led[data-status="red"]    .light { background: #e03131; box-shadow: 0 0 8px #e03131; }
+    .status-led[data-status="yellow"] .light { background: #f2c94c; box-shadow: 0 0 8px #f2c94c; }
+    .status-led[data-status="gray"]   .light { background: #9e9e9e; box-shadow: 0 0 8px #9e9e9e; }
+    .status-led[data-status="black"]  .light { background: #000000; box-shadow: 0 0 8px #000000; }
+
+    @keyframes blink {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.5; }
+    }
+
+    .status-led.blinking .light {
+      animation: blink 3s infinite;
+    }
+    '''
   ::
   ++  poke-spider
     |=  [=wire =cage]
@@ -949,7 +1656,12 @@
   ::
   ++  send-fact-state
     ^-  card
-    [%give %fact ~[/state-updates] %noun !>(persistent-state)]
+    [%give %fact ~[/state-updates] %state !>(persistent-state)]
+  ::
+  ++  send-fact-message
+    |=  msg=message
+    ^-  card
+    [%give %fact ~[/state-updates] %message !>(msg)]
   ::
   ++  bek  [our.bowl %base da+now.bowl]
   ++  make-tid
