@@ -8,34 +8,530 @@
 =/  our-url    (cat 3 '/apps/' name-term)
 =/  seconds-mask  (mix (not 7 1 0) (not 6 1 0))
 |%
-+$  versioned-state
++$  versioned-persistent-state
   $%  state-0
   ==
 ::
 +$  strand-state
+  $+  strand-state
   $:  src=strand-source
       params=strand-params
       is-running=?
       params-counter=@
-      awaits-timer=?
+      fires-at=(unit @da)
       hash=@uv
   ==
 ::
 +$  state-0
+  $+  state-0
   $:  version=%0
       suspend-counter=@
       strands=(map strand-id strand-state)
       products=(map strand-id (pair (each vase tang) time))
   ==
+::
++$  state-diff
+  $+  state-diff
+  $:  strands=strand-diff
+      products=product-diff
+  ==
+::
++$  strand-diff-v
+  $%  [%new s=strand-state]
+      [%edit s=strand-state-diff]
+      [%del ~]
+  ==
+::
++$  strand-diff  (map strand-id strand-diff-v)
+::
++$  strand-state-diff-v
+  $%  [%source src=strand-source]
+      [%params p=strand-params]
+      [%running flag=?]
+  ==
+::
++$  strand-state-diff  (set strand-state-diff-v)
+::
++$  product-diff-v
+  $%  [%new p=(each vase tang) q=time]
+      [%del ~]
+  ==
+::
++$  product-diff  (map strand-id product-diff-v)
+::
++$  polling  (map time [stale=? s=persistent])
++$  transient-state
+  $:  =polling
+  ==
+::
++$  persistent  state-0
++$  state  [persistent transient-state]
 +$  card  card:agent:gall
 +$  sign  sign:agent:gall
---
++$  poll-payload
+  $%  [%diff d=state-diff]
+      [%message m=message]
+  ==
 ::
++$  poll-responder-yield  [load=(unit poll-payload) new=persistent]
++$  message
+  $%  [%error why=@t what=tang]
+  ==
+::
++$  request-to-validate
+  $%  [%action a=action-to-validate]
+      [%read r=read]  ::  XX use http scry?
+  ==
+::
++$  request
+  $%  [%action a=action]
+      [%read r=read]  ::  XX use http scry?
+  ==
+::
++$  request-error  (each request tang)
++$  read
+  $%  [%product id=strand-id]
+  ==
+::
++$  action-to-validate
+  $%  $>(?(%del %wipe %run %clear %stop) action)
+      [%new id-txt=cord lang=cord txt=cord]
+      [%upd id=strand-id txt=cord]
+  ==
+--
+::  lib core
 |%
-++  make-tape
-  |=  id=strand-id
+++  finally-do
+  |*  a=mold
+  =/  m1  (strand:rand a)
+  =/  m2  (strand:rand *)
+  |=  [z=form:m2 r=form:m1]
+  ;<  out=a  bind:m1  r
+  ;<  *      bind:m1  z
+  (pure:m1 out)
+::
+++  rand-map
+  |*  [a=mold b=mold]
+  =/  m1  (strand:rand a)
+  =/  m2  (strand:rand b)
+  |=  [gat=$-(a b) r=form:m1]
+  ^-  form:m2
+  ;<  p=a  bind:m2  r
+  (pure:m2 (gat p))
+::
+++  apply-rule
+  |*  m=mold
+  |=  [bus=$-(nail (like m)) txt=cord fail=cord]
+  ^-  (each m tang)
+  =/  [=hair res=(unit [out=m =nail])]  (bus [1 1] (trip txt))
+  ?~  res  |+[fail (report-parser-fail hair txt)]
+  &+out.u.res
+::
+++  biff-each
+  |*  m1=mold
+  |*  [a=(each m1 tang) b=$-(m1 (each * tang))]
+  ?:  ?=(%| -.a)  a
+  (b p.a)
+::
+++  validate-request
+  |=  r=request-to-validate
+  ^-  request-error
+  ?-    -.r
+      %read  &+r
+  ::
+      %action
+    ?-    -.a.r
+        ?(%del %wipe %run %clear %stop)  &+r
+    ::
+        %new
+      ;<  id=strand-id  biff-each
+        =/  e  'syntax error in thread name:'
+        ((apply-rule strand-id) stap id-txt.a.r e)
+      ::
+      ;<  src-param=[strand-source strand-params]  biff-each
+        =/  e  'syntax error in thread name:'
+        =/  rule  (source-params-rule lang.a.r)
+        ((apply-rule (pair strand-source strand-params)) rule txt.a.r e)
+      ::
+      &+[%action %new id src-param]
+    ::
+        %upd
+      ;<  params=strand-params  biff-each
+        =/  e  'syntax error in script parameters:'
+        ((apply-rule strand-params) strand-params-rule txt.a.r e)
+      ::
+      &+[%action %upd id.a.r params]
+    ==
+  ==
+::
+++  apply-tail
+  |*  g=gate
+  |*  sam=^
+  [-.sam (g +.sam)]
+::
+++  await-earliest
+  |*  a=mold
+  =/  m  (strand:rand ,a)
+  |=  l=(list form:m)
+  ^-  form:m
+  |=  tin=strand-input:rand
+  ?~  in.tin  `[%wait ~]
+  =/  o=output:m  `[%skip ~]
+  |-  ^-  output:m
+  ?~  l  o
+  =/  o1  (i.l tin)
+  ?.  ?=(%skip -.next.o1)
+    [(weld cards.o cards.o1) next.o1]
+  $(l t.l, cards.o (weld cards.o cards.o1))
+::
+++  report-parser-fail
+  |=  [=hair txt=cord]
+  ^-  tang
+  =*  lyn  p.hair
+  =*  col  q.hair
+  :~  leaf+"syntax error at [{<lyn>} {<col>}] in source"
+  ::
+    =/  =wain  (to-wain:format txt)
+    ?:  (gth lyn (lent wain))
+      '<<end of file>>'
+    (snag (dec lyn) wain)
+  ::
+    leaf+(runt [(dec col) '-'] "^")
+  ==
+::
+++  parse-request-product
+  |=  req=cord
+  ^-  (unit strand-id)
+  ?:  =('' req)  ~
+  `(rash req stap)
+::
+++  render-tang
+  |=  =tang
   ^-  tape
-  (trip (spat id))
+  %-  zing
+  ^-  (list tape)
+  %-  zing
+  %+  join  `(list tape)`~["\0a"]
+  ^-  (list (list tape))
+  (turn tang (cury wash 0 80))
+::
+++  render-vase
+  |=  =vase
+  ^-  tape
+  %-  zing
+  %+  join  "\0a"
+  (wash 0^80 (cain vase))
+::
+++  render-source-cord
+  |=  src=strand-source
+  ^-  cord
+  ?-    -.src
+      %hoon
+    ?:  =(~ deps.src)  txt.src
+    %+  rap  3
+    ^-  (list cord)
+    %-  zing
+    ^-  (list (list cord))
+    :~  """
+        ##  {(render-deps-tape deps.src)}
+        ::\0a
+        """
+        ~[txt.src]
+    ==
+  ::
+      %js  txt.src
+  ==
+::
+++  render-deps-tape
+  |=  deps=(list (pair term path))
+  ^-  tape
+  ?~  deps  ""
+  |-  ^-  tape
+  ?~  t.deps  "{(trip p.i.deps)}={(trip (spat q.i.deps))}"
+  "{(trip p.i.deps)}={(trip (spat q.i.deps))}, {$(deps t.deps)}"
+::
+++  get-state-diff
+  |=  [old=persistent new=persistent]
+  ^-  (unit state-diff)
+  ?:  =(old new)  ~
+  ?>  =(version.old version.new)
+  ?>  =(suspend-counter.old suspend-counter.new)
+  =/  =strand-diff  (get-strand-diff strands.old strands.new)
+  =/  =product-diff  (get-product-diff products.old products.new)
+  ?:  &(?=(~ strand-diff) ?=(~ product-diff))
+    ~
+  `[strand-diff product-diff]
+::
+++  get-strand-diff
+  |=  [old=(map strand-id strand-state) new=(map strand-id strand-state)]
+  ^-  strand-diff
+  ?:  =(old new)  ~
+  =/  gone  (~(dif by old) new)
+  =/  plus  (~(dif by new) old)
+  =/  edit  ~(key by (~(int by old) new))
+  =/  out=strand-diff
+    %-  ~(rep in edit)
+    |=  [k=strand-id acc=strand-diff]
+    =/  old  (~(got by old) k)
+    =/  new  (~(got by new) k)
+    =/  d=strand-state-diff  (get-strand-state-diff old new)
+    ?:  =(~ d)  acc
+    (~(put by acc) k %edit d)
+  ::
+  %.  `strand-diff`(~(run by plus) (lead %new))
+  %~  uni  by
+  %.  `strand-diff`(~(run by gone) _[%del ~])
+  %~  uni  by
+  out
+::
+++  get-strand-state-diff
+  |=  [old=strand-state new=strand-state]
+  ^-  strand-state-diff
+  ?:  =(old new)  ~
+  =|  out=strand-state-diff
+  =*  put  ~(put in out)
+  =?  out  !=(src.old src.new)                (put %source src.new)
+  =?  out  !=(params.old params.new)          (put %params params.new)
+  =?  out  !=(is-running.old is-running.new)  (put %running is-running.new)
+  out
+::
+++  get-product-diff
+  =*  products  ,(map strand-id (pair (each vase tang) time))
+  |=  [old=products new=products]
+  ^-  product-diff
+  ?:  =(old new)  ~
+  =/  sub  (~(dif by old) new)
+  =/  out=product-diff  (~(run by sub) _[%del ~])
+  %-  ~(rep by new)
+  |=  [[k=strand-id v=(pair (each vase tang) time)] acc=_out]
+  ^+  acc
+  =/  old=(unit (pair (each vase tang) time))  (~(get by old) k)
+  ?:  |(?=(~ old) =(u.old v))  acc
+  (~(put by acc) k %new v)
+::
+++  enjs
+  =,  enjs:format
+  |%
+  ++  message
+    |=  m=^message
+    ^-  json
+    %-  frond
+    :-  -.m
+    ?-  -.m
+      %error  (pairs why+s+why.m what+s+(crip (render-tang what.m)) ~)
+    ==
+  ::
+  ++  state
+    |=  s=persistent
+    ^-  json
+    %-  pairs
+    :~  strands+(pairs (turn ~(tap by strands.s) strand-state-kv))
+        products+(pairs (turn ~(tap by products.s) product-kv))
+    ==
+  ::
+  ++  strand-state-kv
+    |=  [k=strand-id v=^strand-state]
+    ^-  [@t json]
+    [(spat k) (strand-state v)]
+  ::
+  ++  product-kv
+    |=  [k=strand-id v=(pair (each vase tang) @da)]
+    ^-  [@t json]
+    :-  (spat k)
+    (product v)
+  ::
+  ++  product
+    |=  p=(pair (each vase tang) @da)
+    ^-  json
+    %-  pairs
+    :~  when+(urtime-sec q.p)
+        how+[%b -.p.p]
+    ==
+  ::
+  ++  diff
+    |=  d=state-diff
+    ^-  json
+    %-  pairs
+    :~  strands+a+(turn ~(tap by strands.d) strand-diff-kv)
+        products+a+(turn ~(tap by products.d) product-diff-kv)
+    ==
+  ::
+  ++  strand-diff-kv
+    |=  [k=strand-id v=strand-diff-v]
+    ^-  json
+    %-  pairs
+    :~
+      id+s+(spat k)
+    ::
+      :-  %diff
+      %-  frond
+      :-  -.v
+      ^-  json
+      ?-  -.v
+        %del   ~
+        %new   (strand-state s.v)
+        %edit  (strand-state-diff s.v)
+      ==
+    ==
+  ::
+  ++  product-diff-kv
+    |=  [k=strand-id v=product-diff-v]
+    ^-  json
+    %-  pairs
+    :~
+      id+s+(spat k)
+    ::
+      :-  %diff
+      %-  frond
+      :-  -.v
+      ^-  json
+      ?-  -.v
+        %del  ~
+        %new  (urtime-sec q.v)
+      ==
+    ==
+  ::
+  ++  urtime-sec
+    |=  time=@da
+    ^-  json
+    :-  %s
+    (scot %da (dis time seconds-mask))
+  ::
+  ++  urgap-sec
+    |=  gap=@dr
+    ^-  json
+    :-  %s
+    (scot %dr (dis gap seconds-mask))
+  ::
+  ++  jall
+    |=  a=(unit json)
+    ^-  json
+    ?~  a  ~
+    u.a
+  ::
+  ++  strand-state
+    |=  s=^strand-state
+    ^-  json
+    %-  pairs
+    :~  source+s+(render-source-cord src.s)
+        params+(strand-params params.s)
+        running+b+is-running.s
+        fires+(jall (bind fires-at.s urtime-sec))
+    ==
+  ::
+  ++  strand-params
+    |=  p=^strand-params
+    ^-  json
+    %-  pairs
+    :~  'run_every'^(jall (bind run-every.p urgap-sec))
+    ==
+  ::
+  ++  strand-state-diff
+    |=  d=^strand-state-diff
+    ^-  json
+    %-  pairs
+    (turn ~(tap in d) strand-state-diff-v)
+  ::
+  ++  strand-state-diff-v
+    |=  d=^strand-state-diff-v
+    ^-  [@t json]
+    :-  -.d
+    ^-  json
+    ?-  -.d
+      %source   s+(render-source-cord src.d)
+      %params   (strand-params p.d)
+      %running  b+flag.d
+    ==
+  --
+::
+++  dejs
+  =,  dejs:format
+  |%
+  ++  request-to-validate
+    ^-  $-(json ^request-to-validate)
+    %-  of
+    :~  action+action-to-validate
+        read+read
+    ==
+  ::
+  ++  read
+    ^-  $-(json ^read)
+    %-  of
+    :~  product+strand-id
+    ==
+  ::
+  ++  action-to-validate
+    ^-  $-(json ^action-to-validate)
+    %-  of
+    :~  new+(ot id+so lang+so txt+so ~)
+        upd+(ot id+strand-id params+so ~)
+        del+strand-id
+        wipe+ul
+        run+strand-id
+        :: run-defer
+        clear+strand-id
+        stop+strand-id
+    ==
+  ::
+  ++  strand-id  pa
+  --
+::
+++  source-params-rule
+  |=  lang=cord
+  %+  cook  |=([strand-source strand-params] +<)
+  %+  cook  |*(sam=* [+.sam -.sam])
+  ;~  plug
+    strand-params-rule
+  ::
+    %+  cook  |=(strand-source +<)
+    ?+    lang  ~|(%weird-lang !!)
+        %hoon
+      %+  stag  %hoon
+      ;~  plug
+        deps-rule
+        (cook crip (star next))
+      ==
+    ::
+        %js
+      %+  stag  %js
+      (cook crip (star next))
+    ==
+  ==
+::
+++  strand-params-rule
+  %+  cook  |=(strand-params +<)
+  ;~  pose
+    (stag ~ (ifix [gay gay] ;~(pfix (jest '@@') gap dr-rule)))
+    (easy ~)
+  ==
+::
+++  dr-rule
+  ;~  pfix
+    sig
+  ::
+    %-  sear
+    :_  crub:so
+    |=  d=dime
+    ^-  (unit @dr)
+    ?.  ?=(%dr p.d)  ~
+    `q.d
+  ==
+::
+++  deps-rule
+  %+  cook  |=((list (pair term path)) +<)
+  ;~  pose
+    %+  ifix  [gay gay]
+    %+  cook  |=((list (list (pair term path))) (zing +<))
+    %+  most  gap
+    %+  cook  |=((list (pair term path)) +<)
+    ;~  pfix
+      (jest '##')
+      gap
+      (most (jest ', ') ;~((glue tis) sym stap))
+    ==
+  ::
+    (easy ~)
+  ==
 ::
 ++  set-running-flag
   |=  =flag
@@ -45,12 +541,12 @@
   +<(is-running flag)
 ::
 ++  inc-params-counter  |=(strand-state +<(params-counter +(params-counter)))
-++  set-await-flag
-  |=  =flag
+++  set-fires-at
+  |=  new=(unit time)
   ^-  $-(strand-state strand-state)
   |=  strand-state
   ^-  strand-state
-  +<(awaits-timer flag)
+  +<(fires-at new)
 ::
 ++  comp
   |=  [a=$-(strand-state strand-state) b=$-(strand-state strand-state)]
@@ -61,7 +557,8 @@
 ::
 %+  verb  |
 %-  agent:dbug
-=|  state=state-0
+=|  =state
+=*  persistent-state  -.state
 =*  strand  strand:spider
 ^-  agent:gall
 =<
@@ -79,6 +576,7 @@
     :_  this
     ^-  (list card)
     :-  [%pass /eyre/connect %arvo %e %connect `/apps/[name-term] name-term]
+    :-  [%pass /cleanup/0 %arvo %b %wait (add now.bowl ~h1)]
     ^-  (list card)
     %+  murn  tree
     |=  id=(list tid:spider)
@@ -89,45 +587,44 @@
     ~&  ['stopping script from previous installation: ' i.id]
     `(poke-spider:hc /cancel %spider-stop !>([i.id |]))
   ::
-  ++  on-save   !>(state)
+  ++  on-save   !>(-.state)
   ++  on-load
     |=  old=vase
     ^-  [(list card) _this]
-    =/  ver-state  !<(versioned-state old)
-    =.  state  ver-state
+    =/  ver-state  !<(versioned-persistent-state old)
+    =.  -.state  ver-state
     ::  stop all old threads on load
+    ::  we do that by hand and not by poking ourselves with %stop
+    ::  because we want to create the stop cards before the imminent
+    ::  suspend counter increment
     ::
-    =^  cards-stop  strands.state
+    =^  cards-stop=(list card)  strands.state
       |-  ^-  (quip card _strands.state)
       ?~  strands.state  [~ ~]
       =/  n-cards=(list card)
         ?.  is-running.q.n.strands.state  ~
-        ~[(emit-stop:hc p.n.strands.state)]
+        ~[(emit-spider-stop:hc p.n.strands.state)]
       ::
       =^  l-cards  l.strands.state  $(strands.state l.strands.state)
       =^  r-cards  r.strands.state  $(strands.state r.strands.state)
       [(zing n-cards l-cards r-cards ~) strands.state(is-running.q.n |)]
-    ::  invalidate old timers
+    ::  invalidate old timers and routines
     ::
     =.  suspend-counter.state  +(suspend-counter.state)
     ::  run all threads that were waiting for a timer
     ::
-    =^  cards-run  strands.state
-      |-  ^-  (quip card _strands.state)
-      ?~  strands.state  [~ ~]
-      =/  n-cards=(list card)
-        ?.  awaits-timer.q.n.strands.state  ~
-        ~[(emit-run:hc [p src.q]:n.strands.state)]
-      ::
-      =^  l-cards  l.strands.state  $(strands.state l.strands.state)
-      =^  r-cards  r.strands.state  $(strands.state r.strands.state)
-      :-  (zing n-cards l-cards r-cards ~)
-      %=  strands.state
-        awaits-timer.q.n  |
-        is-running.q.n    awaits-timer.q.n.strands.state
-      ==
+    =/  cards-run=(list card)
+      %-  ~(rep by strands.state)
+      |=  [[k=strand-id v=strand-state] acc=(list card)]
+      ^+  acc
+      ?~  fires-at.v  acc
+      ?:  (lte u.fires-at.v now.bowl)  [(emit-us-run-timer:hc k) acc]
+      [(emit-us-run-defer:hc k u.fires-at.v) acc]
     ::
-    [(weld cards-stop cards-run) this]
+    :_  this
+    =/  wir  /cleanup/(scot %ud suspend-counter.state)
+    :-  [%pass wir %arvo %b %wait (add now.bowl ~h1)]
+    (weld cards-stop cards-run)
   ::
   ++  on-poke
     |=  [=mark =vase]
@@ -142,7 +639,7 @@
         (take-action:hc !<(action vase))
       ==
     ::
-    [cards this]
+    [[send-fact-state:hc cards] this]
   ::
   ++  on-peek
     |=  path=(pole knot)
@@ -160,63 +657,77 @@
       ?+    path  (on-watch:def path)
           [%http-response *]
         `state
+      ::
+          [%state-updates ~]
+        ?>  =(our.bowl src.bowl)
+        `state
       ==
     [cards this]
   ::
   ++  on-arvo
-    |=  [=wire =sign-arvo]
+    |=  [wire=(pole knot) =sign-arvo]
     ^-  (quip card _this)
-    ?+    wire  (on-arvo:def wire sign-arvo)
-        [%eyre %connect ~]  `this
-    ::
-        [%build-strand *]
-      =*  id  t.wire
-      ?>  ?=([%khan %arow *] sign-arvo)
-      ?~  strand=(~(get by strands.state) id)  `this
-      ?:  ?=(%| -.p.sign-arvo)
-        =.  products.state
-          (~(put by products.state) id |+tang.p.p.sign-arvo now.bowl)
-        ::
-        =.  strands.state
-          (strand-lens:hc id (comp (set-running-flag |) (set-await-flag |)))
-        ::
-        `this
-      =+  !<(res=(each vase tang) q.p.p.sign-arvo)
-      ?:  ?=(%| -.res)
-        =.  products.state  (~(put by products.state) id |+p.res now.bowl)
-        =.  strands.state
-          (strand-lens:hc id (comp (set-running-flag |) (set-await-flag |)))
-        ::
-        `this
-      =/  tid  (make-tid:hc id)
-      =/  args=inline-args:spider  [~ `tid bek:hc !<(shed:khan p.res)]
-      =/  wir-watch
-        [ %run-watch
-          (scot %ud suspend-counter.state)
-          id
-        ]
+    =^  cards=(list card)  this
+      ?+    wire  (on-arvo:def wire sign-arvo)
+          [%eyre %connect ~]  `this
       ::
-      =/  wir-poke
-        [ %run-poke
-          (scot %ud suspend-counter.state)
-          id
-        ]
-      ::
-      =/  cards
-        :~  (watch-spider:hc wir-watch /thread-result/[tid])
-            (poke-spider:hc wir-poke+id spider-inline+!>(args))
-        ==
-      ::
-      =/  params  params.u.strand
-      =^  cards  this
-        ?~  run-every.params
-          =.  strands.state  (strand-lens:hc id (set-await-flag |))
-          [cards this]
-        =/  wait-for=@dr  u.run-every.params
-        =.  strands.state  (strand-lens:hc id (set-await-flag &))
-        :_  this
-        :_  cards
-        =/  wir
+          [%build-strand suspend=@ta id=*]
+        =/  id  id.wire
+        =/  suspend=@ud  (slav %ud suspend.wire)
+        ::
+        ?.  =(suspend suspend-counter.state)
+          `this
+        ?>  ?=([%khan %arow *] sign-arvo)
+        ?~  strand=(~(get by strands.state) id)
+          `this
+        ?:  ?=(%| -.p.sign-arvo)
+          =.  products.state
+            %+  ~(put by products.state)  id
+            [|+['build thread failed' tang.p.p.sign-arvo] now.bowl]
+          ::
+          =.  strands.state
+            (strand-lens:hc id (comp (set-running-flag |) (set-fires-at ~)))
+          ::
+          `this
+        =+  !<(res=(each vase tang) q.p.p.sign-arvo)
+        ?:  ?=(%| -.res)
+          =.  products.state
+            (~(put by products.state) id |+['build faiked' p.res] now.bowl)
+          ::
+          =.  strands.state
+            (strand-lens:hc id (comp (set-running-flag |) (set-fires-at ~)))
+          ::
+          `this
+        =/  tid  (make-tid:hc id)
+        =/  args=inline-args:spider  [~ `tid bek:hc !<(shed:khan p.res)]
+        =/  wir-watch
+          [ %run-watch
+            (scot %ud suspend-counter.state)
+            id
+          ]
+        ::
+        =/  wir-poke
+          [ %run-poke
+            (scot %ud suspend-counter.state)
+            id
+          ]
+        ::
+        =/  cards
+          :~  (watch-spider:hc wir-watch /thread-result/[tid])
+              (poke-spider:hc wir-poke+id spider-inline+!>(args))
+          ==
+        ::
+        =/  params  params.u.strand
+        =^  cards  this
+          ?~  run-every.params
+            =.  strands.state  (strand-lens:hc id (set-fires-at ~))
+            [cards this]
+          =/  wait-for=@dr  u.run-every.params
+          =/  fires-at=time  (add now.bowl wait-for)
+          =.  strands.state  (strand-lens:hc id (set-fires-at `fires-at))
+          :_  this
+          :_  cards
+          =;  wir  [%pass wir %arvo %b %wait fires-at]
           [ %timer
             (scot %ud suspend-counter.state)
             (scot %ud params-counter.u.strand)
@@ -224,77 +735,128 @@
             id
           ]
         ::
-        [%pass wir %arvo %b %wait (add now.bowl wait-for)]
+        [cards this]
       ::
-      [cards this]
-    ::
-        [%timer @ta @ta @ta *]
-      =/  suspend-counter  (slav %ud i.t.wire)
-      =/  params-counter   (slav %ud i.t.t.wire)
-      =/  hash             (slav %uv i.t.t.t.wire)
-      =*  id  t.t.t.t.wire
-      ?>  ?=([%behn %wake *] sign-arvo)
-      ?.  =(suspend-counter suspend-counter.state)
-        `this
-      ?~  strand=(~(get by strands.state) id)
-        `this
-      ?.  =(params-counter params-counter.u.strand)
-        `this
-      ?.  =(hash hash.u.strand)
-        `this
-      =+  ?~(error.sign-arvo ~ ((slog u.error.sign-arvo) ~))  =>  +
-      =^  cards=(list card)  this
-        ?:  is-running.u.strand
-          ?~  run-every.params.u.strand
-            =.  strands.state  (strand-lens:hc id (set-await-flag |))
-            `this
-          =.  strands.state  (strand-lens:hc id (set-await-flag &))
-          :_  this
-          =/  wait-for=@dr  u.run-every.params.u.strand
-          :_  ~
-          [%pass wire %arvo %b %wait (add now.bowl wait-for)]
-        :_  this
-        =/  =action  [%run id]
-        :_  ~
-        (poke-self:hc /restart orchestra-action+!>(action))
-      ::
-      [cards this]
-    ==
-  ::
-  ++  on-agent
-    |=  [=wire =sign]
-    ^-  (quip card _this)
-    ?+    wire  (on-agent:def wire sign)
-        [%run-watch @ta *]
-      ?+    -.sign  (on-agent:def wire sign)
-          %fact
-        =/  suspend-counter  (slav %ud i.t.wire)
-        =*  id  t.t.wire
+          [%timer suspend=@ta params=@ta hash=@ta id=*]
+        =/  suspend-counter  (slav %ud suspend.wire)
+        =/  params-counter   (slav %ud params.wire)
+        =/  hash             (slav %uv hash.wire)
+        =/  id  id.wire
+        ::
+        ?>  ?=([%behn %wake *] sign-arvo)
         ?.  =(suspend-counter suspend-counter.state)
           `this
-        ?.  (~(has by strands.state) id)
+        ?~  strand=(~(get by strands.state) id)
           `this
-        =.  strands.state  (strand-lens:hc id (set-running-flag |))
-        ?+    p.cage.sign  (on-agent:def wire sign)
-            %thread-fail
-          =+  !<(res=(pair term tang) q.cage.sign)
-          =.  products.state  (~(put by products.state) id |+q.res now.bowl)
+        ?.  =(params-counter params-counter.u.strand)
           `this
+        ?.  =(hash hash.u.strand)
+          `this
+        %-  ?~  error.sign-arvo  same  (slog u.error.sign-arvo)
+        =^  cards=(list card)  this
+          ?.  is-running.u.strand
+            :_  this  :_  ~
+            (poke-self:hc /restart %run-timer id)
+          ?~  run-every.params.u.strand
+            =.  strands.state  (strand-lens:hc id (set-fires-at ~))
+            `this
+          =/  wait-for=@dr  u.run-every.params.u.strand
+          =/  fires-at=time  (add now.bowl wait-for)
+          =.  strands.state  (strand-lens:hc id (set-fires-at `fires-at))
+          :_  this  :_  ~
+          [%pass wire %arvo %b %wait fires-at]
         ::
-            %thread-done
-          =.  products.state
-            (~(put by products.state) id &+q.cage.sign now.bowl)
-          ::
+        [cards this]
+      ::
+          [%poll-responder suspend=@ta eyre-id=@ta stamp=@ta ~]
+        =/  suspend=@ud  (slav %ud suspend.wire)
+        =/  stamp=@da    (slav %da stamp.wire)
+        ::
+        ?.  =(suspend suspend-counter.state)
           `this
+        ?>  ?=([%khan %arow *] sign-arvo)
+        =^  response=(unit json)  this
+          =,  enjs:format
+          ?:  ?=(%| -.p.sign-arvo)
+            ~&  %polling-responder-failure
+            =.  polling.state
+              (~(put by polling.state) stamp |+persistent-state)
+            ::
+            :_  this
+            `(frond %full (state:enjs persistent-state))
+          =+  !<(yil=poll-responder-yield q.p.p.sign-arvo)
+          =.  polling.state  (~(put by polling.state) stamp |+new.yil)
+          :_  this
+          ^-  (unit json)
+          ?~  load.yil  ~
+          ?-    -.u.load.yil
+              %diff
+            :: `(diff:enjs u.diff)
+            ::  XX just send the whole state for now, it's not that big
+            ::
+            `(frond:enjs:format %full (state:enjs persistent-state))
+          ::
+              %message
+            `(frond %message (message:enjs m.u.load.yil))
+          ==
+        ::
+        :_  this
+        ?~  response  (response:schooner eyre-id.wire 204 ~ json+~)
+        (response:schooner eyre-id.wire 200 ~ json+u.response)
+      ::
+          [%cleanup suspend=@ta ~]
+        =/  suspend-counter  (slav %ud suspend.wire)
+        ::
+        ?.  =(suspend-counter suspend-counter.state)
+          `this
+        =.  polling.state
+          %-  ~(rep by polling.state)
+          |=  [[k=time v=[stale=? s=state-0]] acc=polling]
+          ^+  acc
+          ?:  stale.v  acc
+          (~(put by acc) k v(stale &))
+        ::
+        :_  this  :_  ~
+        [%pass wire %arvo %b %wait (add now.bowl ~h1)]
+      ==
+    ::
+    [[send-fact-state:hc cards] this]
+  ::
+  ++  on-agent
+    |=  [wire=(pole knot) =sign]
+    ^-  (quip card _this)
+    =^  cards  this
+      ?+    wire  (on-agent:def wire sign)
+          [%run-watch suspend=@ta id=*]
+        =/  suspend-counter  (slav %ud suspend.wire)
+        =/  id  id.wire
+        ?+    -.sign  (on-agent:def wire sign)
+            %fact
+          ?.  =(suspend-counter suspend-counter.state)
+            `this
+          ?.  (~(has by strands.state) id)
+            `this
+          =.  strands.state  (strand-lens:hc id (set-running-flag |))
+          ?+    p.cage.sign  (on-agent:def wire sign)
+              %thread-fail
+            =+  !<(res=(pair term tang) q.cage.sign)
+            =.  products.state  (~(put by products.state) id |+q.res now.bowl)
+            `this
+          ::
+              %thread-done
+            =.  products.state
+              (~(put by products.state) id &+q.cage.sign now.bowl)
+            ::
+            `this
+          ==
         ==
       ==
-    ==
+    ::
+    [[send-fact-state:hc cards] this]
   ::
   ++  on-fail   on-fail:def
   ++  on-leave  on-leave:def
   --
-::  helper core
-::
 |%
 ++  helper-core
   |_  =bowl:gall
@@ -306,110 +868,11 @@
     ^+  strands.state
     (~(jab by strands.state) id gate)
   ::
-  ::  %black:   missing
-  ::  %yellow:  running
-  ::  %gray:    not running, no product
-  ::  %red:     not running, error
-  ::  %green:   not running, returned product
-  ::
-  ++  status
-    |=  id=strand-id
-    ^-  [color=?(%green %gray %red %yellow %black) blinking=?]
-    ?~  rand=(~(get by strands.state) id)   black+|
-    (status-state id u.rand)
-  ::
-  ++  status-state
-    |=  [id=strand-id rand=strand-state]
-    ^-  [color=?(%green %gray %red %yellow %black) blinking=?]
-    ?:  is-running.rand                    yellow+|
-    :_  awaits-timer.rand
-    ?~  pro=(~(get by products.state) id)  %gray
-    ?-    -.src.rand
-        %hoon
-      ?:  ?=(%| -.p.u.pro)  %red
-      %green
-    ::
-        %js
-      ?:  ?=(%| -.p.u.pro)  %red
-      =/  js-res
-        %-  mole  |.
-        !<  [%0 out=(each cord (pair cord cord))]
-        p.p.u.pro
-      ::
-      ?~  js-res  %red
-      ?:  ?=(%| -.out.u.js-res)  %red
-      %green
-    ==
-  ::
-  ++  bek  [our.bowl %base da+now.bowl]
-  ++  make-tid
-    |=  id=strand-id
-    ^-  tid:spider
-    =/  txt=tape  (trip (spat id))
-    =.  txt  (turn txt |=(=char ?:(=('/' char) '-' char)))
-    %:  rap  3
-      'orchestra-'  (scot %ud version.state)
-      '-'  (scot %ud suspend-counter.state)
-      txt
-    ==
-  ::
-  ++  take-action
-    |=  act=action
-    ^-  (quip card _state)
-    ?-    -.act
-        %new
-      ?:  (~(has by strands.state) id.act)
-        ~&  >>  %orchestra-id-already-present
-        `state
-      =/  hash=@uv  (shax (jam %orchestra eny.bowl act))
-      =,  act
-      =.  strands.state  (~(put by strands.state) id [src params & 0 | hash])
-      [~[(emit-run id.act src.act)] state]
-    ::
-        %del
-      =.  products.state  (~(del by products.state) id.act)
-      ?.  (~(has by strands.state) id.act)  `state
-      [~[(emit-stop id.act)] state(strands (~(del by strands.state) id.act))]
-    ::
-        %upd
-      ?~  rand=(~(get by strands.state) id.act)
-        ~&  >>  %orchestra-id-not-present
-        `state
-      =.  params.u.rand  params.act
-      =.  params-counter.u.rand  +(params-counter.u.rand)
-      =.  strands.state  (~(put by strands.state) id.act u.rand)
-      =.  strands.state  (strand-lens id.act (set-await-flag |))
-      `state
-    ::
-        %wipe
-      `state(products ~)
-    ::
-        %run
-      ?~  rand=(~(get by strands.state) id.act)
-        ~&  >>  %orchestra-id-not-present
-        `state
-      ?:  is-running.u.rand
-        ~&  >>  %orchestra-id-already-running
-        `state
-      :-  ~[(emit-run id.act src.u.rand)]
-      =.  strands.state
-        (strand-lens id.act (comp (set-running-flag &) (set-await-flag |)))
-      ::
-      state
-    ::
-        %clear
-      `state(products (~(del by products.state) id.act))
-    ==
-  ::
-  ++  render-tang
-    |=  =tang
-    ^-  tape
-    %-  zing
-    ^-  (list tape)
-    %-  zing
-    %+  join  `(list tape)`~["\0a"]
-    ^-  (list (list tape))
-    (turn tang (cury wash 0 80))
+  ++  strand-lens-opt
+    |=  [id=strand-id gate=$-(strand-state strand-state)]
+    ^+  strands.state
+    ?.  (~(has by strands.state) id)  strands.state
+    (~(jab by strands.state) id gate)
   ::
   ++  handle-http
     |=  [eyre-id=@ta =inbound-request:eyre]
@@ -419,279 +882,159 @@
     ::
     =+  send=(cury response:schooner eyre-id)
     ?+    method.request.inbound-request  [(send [405 ~ [%stock ~]]) state]
-    ::
         ?(%'GET' %'POST')
-      ?+      site
-            :_  state
-            (send [404 ~ [%plain "404 - Not Found"]])
+      =/  site=(pole knot)  site
+      ?+    site  [(send [404 ~ [%plain "404 - Not Found"]]) state]
+          ?([%apps name-mold %$ ~] [%'~' name-mold ~])
+        :_  state
+        (send 302 ~ [%redirect our-url])
       ::
-          ?([%apps name-mold ~] [%apps name-mold %$ ~] [%'~' name-mold ~])
+          [%apps name-mold ~]
         ?.  authenticated.inbound-request
           :_  state
           %-  send
           [302 ~ [%login-redirect our-url]]
-        ?~  body.request.inbound-request
-          [(send [200 ~ manx+(form ~)]) state]
-        =/  args  (parse-request q.u.body.request.inbound-request)
-        ?-    -.args
-            %send
-          ?:  ?=(%| -.p.args)
-            =/  rendered  (render-tang p.p.args)
-            [(send [200 ~ manx+(form [[%parse rendered] ~ ~])]) state]
-          =^  cards  state  (handle-request p.p.args)
-          :_  state
-          %+  weld  cards
-          (send 302 ~ [%redirect our-url])
-        ::
-            %update
-          ?:  ?=(%| -.p.args)
-            =/  m  [[%parse-update (render-tang p.p.args)] ~ ~]
-            [(send [200 ~ manx+(form m)]) state]
-          =^  [cards=(list card) updates=(map @tas tape)]  state
-            (handle-update p.p.args)
-          ::
-          ?:  =(~ cards)  [(send [200 ~ manx+(form updates)]) state]
-          :_  state
-          %+  weld  cards
-          (send 302 ~ [%redirect our-url])
-        ==
+        =/  time  now.bowl
+        [(send [200 ~ manx+(form time)]) state]
       ::
-          [%apps name-mold %product ~]
+          [%apps name-mold %poll time=@ta ~]
+        ?.  authenticated.inbound-request  `state
+        =/  stamp=time  (slav %ui time.site)
+        =^  jon=(unit json)  state
+          ?~  stash=(~(get by polling.state) stamp)
+            ~&  %first-poll
+            =.  polling.state
+              (~(put by polling.state) stamp |+persistent-state)
+            ::
+            :_  state
+            `(frond:enjs:format %full (state:enjs persistent-state))
+          ?~  diff=(get-state-diff s.u.stash persistent-state)  [~ state]
+          :: `(diff:enjs u.diff)
+          ::  XX just send the whole state for now, it's not that big
+          ::
+          =.  polling.state
+            (~(put by polling.state) stamp |+persistent-state)
+          ::
+          :_  state
+          `(frond:enjs:format %full (state:enjs persistent-state))
+        ::
+        :_  state
+        ?^  jon  (send [200 ~ json+u.jon])
+        (dispatch-poll-responder eyre-id persistent-state stamp)
+      ::
+          [%apps name-mold %api ~]
         ?.  authenticated.inbound-request  `state
         ?~  body.request.inbound-request   `state
-        =/  id=(unit strand-id)
-          (parse-request-product q.u.body.request.inbound-request)
+        ~&  `@t`q.u.body.request.inbound-request
+        =/  jin=json  (need (de:json:html q.u.body.request.inbound-request))
+        =/  rev=request-to-validate  (request-to-validate:dejs jin)
+        =/  rer=request-error  (validate-request rev)
+        ?:  ?=(%| -.rer)
+          =/  jon=json
+            %+  frond:enjs:format  %error
+            s+(crip ['Argument error:\0a' (render-tang p.rer)])
+          ::
+          [(send [200 ~ json+jon]) state]
+        =/  req=request  p.rer
+        ?-    -.req
+            %action
+          =^  cards=(list card)  state  (take-action a.req)
+          [(weld cards (send [200 ~ json+~])) state]
         ::
-        =;  jon=json  [(send [200 ~ json+jon]) state]
-        ?~  id  ~
-        ?~  pro=(~(get by products.state) u.id)  ~  ::  null
-        =/  rand  (~(get by strands.state) u.id)
-        =-  [%o ['u' s+-] ~ ~]                      ::  {u: string}
-        %-  crip
-        %+  weld  "{(scow %da (dis q.u.pro seconds-mask))}\0a"
-        ^-  tape
-        ?:  |(?=(~ rand) ?=(%hoon -.src.u.rand))
-          ?:  ?=(%| -.p.u.pro)
-            %+  weld  "Error:\0a"
-            (render-tang p.p.u.pro)
-          %+  weld  "Success:\0a"
-          ^-  tape
-          (zing (join "\0a" (wash 0^80 (cain p.p.u.pro))))
-        ::  (-.src.u.rand == %js)
-        ::
+            %read
+          =/  jon=json  (handle-read-http r.req)
+          [(send [200 ~ json+jon]) state]
+        ==
+      ==
+    ==
+  ::
+  ++  handle-read-http
+    |=  r=read
+    ^-  json
+    ?-    -.r
+        %product
+      ?~  pro=(~(get by products.state) id.r)  ~  ::  null
+      =/  rand  (~(get by strands.state) id.r)
+      =-  [%o ['result' s+-] ~ ~]                 ::  {result: string}
+      ^-  cord
+      %-  crip
+      %+  weld  "{(scow %da (dis q.u.pro seconds-mask))}\0a"
+      ^-  tape
+      ?:  |(?=(~ rand) ?=(%hoon -.src.u.rand))
         ?:  ?=(%| -.p.u.pro)
-          %+  weld  "Thread error:\0a"
+          %+  weld  "Error:\0a"
           (render-tang p.p.u.pro)
-        =/  js-res
-          %-  mole  |.
-          !<  [%0 out=(each cord (pair cord cord))]
-          p.p.u.pro
-        ::
-        ?~  js-res  "Unrecognized JS result"
-        =/  out  out.u.js-res
-        ?-    -.out
-            %&
-          "Success:\0a{(trip p.out)}"
-        ::
-            %|
-          "JS error:\0a{(trip p.p.out)}\0a{(trip q.p.out)}"
-        ==
+        %+  weld  "Success:\0a"
+        (render-vase p.p.u.pro)
+      ::  (-.src.u.rand == %js)
       ::
-          [%apps name-mold %states ~]
-        ?.  authenticated.inbound-request  `state
-        =;  jon=json  [(send [200 ~ json+jon]) state]
-        :-  %o
-        %-  ~(rep by strands.state)
-        |=  [[k=strand-id v=strand-state] acc=(map @t json)]
-        ^+  acc
-        =/  etat  (status-state k v)
-        =-  (~(put by acc) (spat k) -)
-        %-  pairs:enjs:format
-        :~  color+s+color.etat
-            blinking+b+blinking.etat
-        ==
+      ?:  ?=(%| -.p.u.pro)
+        %+  weld  "Thread error:\0a"
+        (render-tang p.p.u.pro)
+      =/  js-res
+        %-  mole  |.
+        !<  [%0 out=(each cord (pair cord cord))]
+        p.p.u.pro
+      ::
+      ?~  js-res  "Unrecognized JS result"
+      =/  out  out.u.js-res
+      ?-    -.out
+          %&
+        "Success:\0a{(trip p.out)}"
+      ::
+          %|
+        "JS error:\0a{(trip p.p.out)}\0a{(trip q.p.out)}"
       ==
     ==
-  ::
-  ++  less-cr-rule
-    %-  star
-    ;~  pose
-      (cold '\0a' (jest '\0d\0a'))
-      next
-    ==
-  ::
-  ++  parse-request-product
-    |=  req=cord
-    ^-  (unit strand-id)
-    ?:  =('' req)  ~
-    `(rash req stap)
-  ::
-  ++  handle-update
-    |=  arg=(unit [id=strand-id web-action=@t time=(unit @dr)])
-    ^-  [[(list card) (map @tas tape)] _state]
-    ?~  arg  [[~ ~] state]
-    =*  id  id.u.arg
-    =/  web-action  web-action.u.arg
-    =*  time  time.u.arg
-    ?+    web-action  !!
-        %update-schedule
-      ::  no page updates, one card
-      ::
-      :_  state  :_  ~  :_  ~
-      =/  =action  [%upd id time]
-      (poke-self /update orchestra-action+!>(action))
-    ::
-        %delete
-      :_  state  :_  ~  :_  ~
-      =/  =action  [%del id]
-      (poke-self /update orchestra-action+!>(action))
-    ::
-        %clear-product
-      :_  state  :_  ~  :_  ~
-      =/  =action  [%clear id]
-      (poke-self /update orchestra-action+!>(action))
-    ::
-        %run
-      ?~  rand=(~(get by strands.state) id)  [[~ ~] state]
-      ?:  is-running.u.rand  [[~ ~] state]
-      ::  invalidate old timers
-      ::
-      =.  strands.state  (strand-lens id inc-params-counter)
-      :_  state  :_  ~  :_  ~
-      =/  =action  [%run id]
-      (poke-self /update orchestra-action+!>(action))
-    ==
-  ::
-  ++  parse-request
-    |=  req=cord
-    ^-  $%  [%update p=(each (unit [strand-id @t (unit @dr)]) tang)]
-            [%send p=(each (trel strand-id (unit @dr) strand-source) tang)]
-        ==
-    =/  fields=(map @t @t)
-      %-  malt
-      ~|  %request-parse-fail
-      (rash req yquy:de-purl:html)
-    ::
-    =/  action=@t  (~(got by fields) %action)
-    ?:  ?=(%send-script action)
-      :-  %send
-      ^-  (each (trel strand-id (unit @dr) strand-source) tang)
-      =/  [name=@t txt=@t lang=@t]
-        ~|  %request-read-fail
-        :+  (~(got by fields) %script-name)
-          (~(got by fields) %script-text)
-        (~(got by fields) %language-choice)
-      ::
-      ?~  id=(rush name stap)  |+~['invalid name, expected path']
-      ?~  u.id  |+~['empty path not permitted']
-      ::  replace \r\n with \n
-      ::
-      =/  text=tape  (rash txt less-cr-rule)
-      ?+    lang  ~|  %unrecognized-language  !!
-          %hoon
-        =|  every=(unit @dr)
-        =|  deps=(list (pair term path))
-        =/  flags=[hax=? pat=?]  [| |]
-        |-  ^-  (each (trel strand-id (unit @dr) strand-source) tang)
-        ?:  |(?=(~ text) ?=([* ~] text))
-          &+[u.id every %hoon deps (crip text)]
-        ?.  |(=(['#' '#'] [&1 &2]:text) =(['@' '@'] [&1 &2]:text))
-          &+[u.id every %hoon deps (crip text)]
-        ?:  =('@' -.text)
-          ?:  pat.flags  |+~['duplicate schedule directive']
-          =/  [=hair res=(unit [out=@dr =nail])]  (time-rule [1 1] text)
-          ?~  res
-            |+(report-parser-fail hair (crip text))
-          $(every `out.u.res, pat.flags &, text q.nail.u.res)
-        ?:  hax.flags  |+~['duplicate import directive']
-        =/  [=hair res=(unit [out=(list (pair term path)) =nail])]
-          (deps-rule [1 1] text)
-        ::
-        ?~  res
-          |+(report-parser-fail hair (crip text))
-        $(deps out.u.res, hax.flags &, text q.nail.u.res)
-      ::
-          %js
-        =|  every=(unit @dr)
-        |-  ^-  (each (trel strand-id (unit @dr) strand-source) tang)
-        ?:  |(?=(~ text) ?=([* ~] text))
-          &+[u.id every %js (crip text)]
-        ?.  =(['@' '@'] [&1 &2]:text)
-          &+[u.id every %js (crip text)]
-        =/  [=hair res=(unit [out=@dr =nail])]  (time-rule [1 1] text)
-        ?~  res
-          |+(report-parser-fail hair (crip text))
-        $(every `out.u.res, text q.nail.u.res)
-      ==
-    ?.  ?=(?(%update-schedule %delete %clear-product %run) action)
-      ~|  %unsupported-action
-      !!
-    :-  %update
-    ^-  (each (unit [strand-id @t (unit @dr)]) tang)
-    =/  [name=@t time=@t]
-      ~|  [%request-read-fail fields]
-      :-  (~(got by fields) %choose-thread)
-      (~(got by fields) %schedule-time)
-    ::
-    ?:  =('' name)  &+~
-    =/  id  (rash name stap)
-    ?:  =('' time)  &+`[id action ~]
-    ?~  time=(rush time dr-rule)  |+~['invalid @dr syntax']
-    &+`[id action time]
-  ::
-  ++  dr-rule
-    ;~  pfix
-      sig
-      %+  sear
-        |=  d=dime
-        ^-  (unit @dr)
-        ?.  ?=(%dr p.d)  ~
-        `q.d
-      crub:so
-    ==
-  ::
-  ++  time-rule
-    ;~  pfix
-      (jest '@@')
-      gap
-      ;~(sfix dr-rule gap)
-    ==
-  ::
-  ++  deps-rule
-    ;~  pfix
-      (jest '##')
-      gap
-      ;~  pose
-        ;~(sfix (more (jest ', ') ;~((glue tis) sym stap)) gap)
-        (easy ~)
-      ==
-    ==
-  ::
-  ++  report-parser-fail
-    |=  [=hair txt=cord]
-    ^-  tang
-    =*  lyn  p.hair
-    =*  col  q.hair
-    :~  leaf+"syntax error at [{<lyn>} {<col>}] in source"
-    ::
-      =/  =wain  (to-wain:format txt)
-      ?:  (gth lyn (lent wain))
-        '<<end of file>>'
-      (snag (dec lyn) wain)
-    ::
-      leaf+(runt [(dec col) '-'] "^")
-    ==
-  ::
-  ++  handle-request
-    |=  [id=strand-id run-every=(unit @dr) src=strand-source]
-    ^-  (quip card _state)
-    :_  state
+
+  ++  dispatch-poll-responder
+    |=  [eyre-id=@ta stash=persistent stamp=@da]
+    ^-  (list card)
     :_  ~
-    =/  =action  [%new id src run-every]
-    (poke-self /web-new-thread orchestra-action+!>(action))
+    =/  wir=wire
+      :~  %poll-responder
+          (scot %ud suspend-counter.state)
+          eyre-id
+          (scot %da stamp)
+      ==
+    ::
+    (send-shed wir (poll-responder stash))
+  ::
+  ++  poll-responder
+    |=  stash=persistent
+    ^-  shed:khan
+    %+  (rand-map poll-responder-yield vase)
+      |=(poll-responder-yield !>(+<))
+    =/  m  (strand poll-responder-yield)
+    ^-  form:m
+    =/  wir=wire  /state-updates
+    ;<  ~        bind:m  (watch-our:sio wir name-term wir)
+    %+  (finally-do poll-responder-yield)  (leave-our:sio wir name-term)
+    ;<  now=@da  bind:m  get-time:sio
+    =/  till=@da  (add now ~s15)
+    ;<  ~  bind:m  (send-wait:sio till)
+    |-  ^-  form:m
+    %-  (await-earliest poll-responder-yield)
+    :~
+      ;<  ~  bind:m  (take-wake:sio `till)
+      (pure:m ~ stash)
+    ::
+      ;<  =cage  bind:m  (take-fact:sio wir)
+      ?+    p.cage  ~|(%weird-mark !!)
+          %state
+        =+  !<(new=persistent q.cage)
+        ?~  diff=(get-state-diff stash new)
+          $(stash new)
+        (pure:m `[%diff u.diff] new)
+      ::
+          %message
+        =+  !<(msg=message q.cage)
+        (pure:m `[%message msg] stash)
+      ==
+    ==
   ::
   ++  form
-    |=  updates=(map @tas tape)
+    |=  stamp=time
     ^-  manx
     ;html
       ;head
@@ -702,27 +1045,22 @@
       ==
     ::
       ;body
-        ;select#choose-thread(name "choose-thread", onchange "updateTextBox()", form "control-form")
+        ;select#choose-thread(name "choose-thread", onchange "updateView()", form "control-form")
           ;option(value ""): --Select--
-        ::
-          ;*
-          %+  turn  ~(tap by strands.state)
-          |=  [k=strand-id v=*]
-          =/  t  (make-tape k)
-          ;option(value t): {t}
         ==
       ::
         ;pre#script-box
           ;+  ;/  "Script will appear here..."
         ==
       ::
-        ;form#control-form(action "{(trip our-url)}", method "POST")
+        ;form#control-form
           ;div#control-row
             ;span#status-led.status-led(data-status "", title "", data-tooltip "No status")
               ;span.light;
             ==
-            ;button#delete(name "action", type "submit", value "delete"): Delete
-            ;button#show-result(name "action", type "button", onclick "showResult()"): Load result
+          ::
+            ;button#delete(type "button", onclick "delete()"): Delete
+            ;button#show-result(type "button", onclick "showResult()"): Load result
             ;div#update-params
               ;input#schedule-field
                 =name         "schedule-time"
@@ -732,22 +1070,19 @@
                 ;
               ==
             ::
-              ;button#update-schedule(name "action", type "submit", value "update-schedule"): Update
+              ;button#update-schedule(name "action", type "button", onclick "updateParams()"): Update
             ==
-            ;button#update-schedule(name "action", type "submit", value "clear-product"): Clear product
-            ;button#update-schedule(name "action", type "submit", value "run"): Run
+          ::
+            ;button#update-schedule(name "action", type "button", onclick "clearProduct()"): Clear product
+            ;button#update-schedule(name "action", type "button", onclick "run()"): Run
           ==
         ==
       ::
-      ;+  ?~  parser-fail=(~(get by updates) %parse-update)
-            ;p;
-          ;div#error-message: {u.parser-fail}
-      ::
-      ;div#show-product(hidden "");
-      ::
+        ;div#message-control(hidden "");
+        ;div#error-control(hidden "");
         ;br;  ;br;
-        ;h1: Add a new thread
-        ;form#upload-form(method "POST")
+        ;h1: Add a new script
+        ;form#upload-form
           ;div#upload-row
             ;textarea#script-name
               =name  "script-name"
@@ -757,10 +1092,13 @@
               ;
             ==
           ::
-            ;select#language-choice(name "language-choice", onchange "updatePlaceholder()")
+            ;select#language-choice(name "language-choice", onchange "updateLangPlaceholder()")
               ;option(value "hoon"): Hoon
               ;option(value "js"): JavaScript
             ==
+          ::
+            ;input#overwrite-checkbox(type "checkbox");
+            ;label(for "overwrite-checkbox"): overwrite
           ==
         ::
           ;textarea#script-text
@@ -776,120 +1114,86 @@
             ;
           ==
         ::
-          ;+  ?~  parse-script=(~(get by updates) %parse)
-                ;p;
-              ;div#error-message: {u.parse-script}
-        ::
+          ;div#error-submit(hidden "");
           ;br;
-          ;button(type "submit", name "action", value "send-script"): Send
+          ;button(type "button", name "action", onclick "sendScript()"): Send
         ==
       ::
-        ;script: {js-code}
+        ;script: {(js-code stamp)}
       ==
     ==
   ::
-  ++  render-scripts
-    ^-  tape
-    =;  l=(list (pair tape tape))
-      |-  ^-  tape
-      ?~  l  ""
-      """
-      "{p.i.l}": {(trip (en:json:html s+(crip q.i.l)))},
-      {$(l t.l)}
-      """
-    ::
-    %+  turn  ~(tap by strands.state)
-    |=  [k=strand-id v=[src=strand-source params=strand-params *]]
-    ::  key and displayed text
-    ::
-    ^-  [tape tape]
-    :-  (make-tape k)
-    =-  ?~  run-every.params.v  -
-        (weld "@@  {<u.run-every.params.v>}\0a::\0a" -)
-    ?-    -.src.v
-        %hoon
-      ?:  =(~ deps.src.v)  (trip txt.src.v)
-      """
-      ##  {(render-deps deps.src.v)}
-      ::
-      {(trip txt.src.v)}
-      """
-    ::
-        %js
-      (trip txt.src.v)
-    ==
-  ::
-  ++  render-deps
-    |=  deps=(list (pair term path))
-    ^-  tape
-    ?~  deps  ""
-    |-  ^-  tape
-    ?~  t.deps  "{(trip p.i.deps)}={(trip (spat q.i.deps))}"
-    "{(trip p.i.deps)}={(trip (spat q.i.deps))}, {$(deps t.deps)}"
-  ::
-  ++  render-states
-    ^-  tape
-    =/  ids  ~(tap in ~(key by strands.state))
-    |-  ^-  tape
-    ?~  ids  ""
-    =/  etat  (status i.ids)
-    """
-    "{(make-tape i.ids)}": \{color: `{(trip color.etat)}`,
-                             blinking: {?:(blinking.etat "true" "false")}
-                            },
-    {$(ids t.ids)}
-    """
-  ::
   ++  js-code
+    |=  stamp=time
     ^-  tape
-    """
-    const sources = \{ {render-scripts} };
-    let states = \{ {render-states} };
-
-    const tips = \{
+    %+  weld
+      """
+      const PollUrl = '{(trip our-url)}/poll/{(scow %ui stamp)}';\0a
+      const APIUrl = '{(trip our-url)}/api';\0a
+      """
+    =>  ..trip
+    ^~  %-  trip
+    '''
+    //  state mirror
+    //
+    //  Scripts: script_id: string => {src: string,
+    //                                 running: bool,
+    //                                 params: {run_every: string},
+    //                                 fires: null | string,
+    //                                 has_product: null
+    //                                              | {success: bool,
+    //                                                 when: string
+    //                                                }
+    //                                }
+    //
+    let Scripts = {};
+    const Tips = {
       red: 'Script failed last run',
       green: 'Script returned sucessfully',
       yellow: 'Script still runnning',
       gray: 'Script not runnning',
       black: 'Script not found',
     };
-
-    const div_product = document.getElementById('show-product');
-    const select      = document.getElementById('choose-thread');
-    const textBox     = document.getElementById('script-box');
-    const textScript  = document.getElementById('script-text');
-    const select_lang = document.getElementById('language-choice');
-    const ledEl       = document.getElementById('status-led');
-    const formControl = document.getElementById('control-form');
-    const formUpload  = document.getElementById('upload-form');
-
-    function updateTextBox() \{
-      const scriptKey = select.value;
+    const div_message_control  = document.getElementById('message-control');
+    const div_error_control    = document.getElementById('error-control');
+    const div_error_submit     = document.getElementById('error-submit');
+    const select_script        = document.getElementById('choose-thread');
+    const pre_display_source   = document.getElementById('script-box');
+    const textarea_edit_source = document.getElementById('script-text');
+    const select_language      = document.getElementById('language-choice');
+    const span_LED             = document.getElementById('status-led');
+    const form_control         = document.getElementById('control-form');
+    const form_upload          = document.getElementById('upload-form');
+    const input_schedule       = document.getElementById('schedule-field');
+    const textarea_script_name = document.getElementById('script-name');
+    const input_overwrite_box  = document.getElementById('overwrite-checkbox');
+    
+    function updateView() {
+      const current_key = select_script.value;
       let color = 'white';
       let is_blinking = false;
       let tooltip = 'No status';
       let textbox_content = 'Script will appear here...';
-      if (scriptKey && sources[scriptKey] && states[scriptKey]) \{
-        textbox_content = sources[scriptKey];
-        const state = states[scriptKey];
-        color = state.color;
-        is_blinking = state.blinking;
-        tooltip = tips[state.color] + (( is_blinking ) ? ", awaiting timer" : "");
+      if ( current_key && Scripts[current_key] ) {
+        let script = Scripts[current_key];
+        textbox_content = script.src;
+        color = ( script.running )              ? 'yellow'
+              : ( script.has_product === null ) ? 'gray'
+              : ( script.has_product.success )  ? 'green'
+              : 'red';
+        is_blinking = (script.fires !== null) && (color !== 'yellow');
+        tooltip = Tips[color] + (( is_blinking ) ? ", awaiting timer" : "");
+        if (textBox.textContent !== textbox_content) {
+          textBox.textContent = textbox_content;
+        }
       }
-      if (textBox.textContent !== textbox_content) \{
-        textBox.textContent = textbox_content;
-      }
-      ledEl.setAttribute('data-status', color);
-      ledEl.setAttribute('data-tooltip', tooltip);
-      if ( is_blinking ) \{
-        ledEl.classList.add('blinking');
-      }
-      else \{
-        ledEl.classList.remove('blinking');
-      }
+      span_LED.setAttribute('data-status', color);
+      span_LED.setAttribute('data-tooltip', tooltip);
+      span_LED.classList.toggle('blinking', is_blinking);
     }
-    function updatePlaceholder() \{
-      const lang = select_lang.value;
+
+    function updateLangPlaceholder() {
+      const lang = select_language.value;
       if ('js' == lang) \{
         textScript.placeholder = `@@  ~h1  //  schedule, optional @da
     const urbit = require("urbit_thread");
@@ -906,66 +1210,252 @@
     `;
       }
     }
-    async function showResult() \{
-      const select = document.getElementById('choose-thread');
-      const key = select.value || '';
-      if (!key) \{
-        div_product.setAttribute('hidden', '');
-        div_product.textContent = '';
+    function updateErrorControl(s) {
+      if ( !s ) {
+        div_error_control.setAttribute('hidden', '');
+        div_error_control.textContent = '';
+      } else {
+        div_error_control.textContent = s;
+        div_error_control.removeAttribute('hidden');
+      }
+    }
+
+    function updateMessageControl(s) {
+      if ( !s ) {
+        div_message_control.setAttribute('hidden', '');
+        div_message_control.textContent = '';
+      } else {
+        div_message_control.textContent = s;
+        div_message_control.removeAttribute('hidden');
+      }
+    }
+
+    function updateErrorSubmit(s) {
+      if ( !s ) {
+        div_error_submit.setAttribute('hidden', '');
+        div_error_submit.textContent = '';
+      } else {
+        div_error_submit.textContent = s;
+        div_error_submit.removeAttribute('hidden');
+      }
+    }
+
+    async function showResult() {
+      const current_key = select_script.value || '';
+      if ( !current_key ) {
+        div_message_control.setAttribute('hidden', '');
+        div_message_control.textContent = '';
         return;
       }
-      try \{
-        const response = await fetch('{(trip our-url)}/product', \{method: 'POST', body: key});
+      try {
+        const response = await fetch(APIUrl, {
+          method: 'POST',
+          body: JSON.stringify({
+            read: {product: current_key}
+          })
+        });
+        if ( !response.ok ) {
+          console.error('HTTP error: ' response.status);
+        }
+        else {
+          const data = await response.json();
+          if ( null === data ) {
+            updateMessageControl();
+          }
+          else {
+            updateMessageControl(data.result);
+          }
+        }
+      } catch (e) {
+        console.error('Network error:', e);
+      }
+    }
 
-        if (!response.ok) \{
-          console.error('HTTP error:', response.status);
+    async function delete_key(key) {
+      try {
+        const response = await fetch(APIUrl, {
+          method: 'POST',
+          body: JSON.stringify({
+            action: {del: key}
+          })
+        });
+        if ( !response.ok ) {
+          console.error('HTTP error: ' response.status);
         }
-        else \{
-          const data = await response.json();
-          if (null === data) \{
-            div_product.setAttribute('hidden', '');
-            div_product.textContent = '';
-            return;
-          }
-          else \{
-            div_product.textContent = data.u;
-            div_product.removeAttribute('hidden');
-          }
+        else {
+          updateErrorControl();
         }
-      } catch (error) \{
-        console.error('Network error:', error);
+      } catch (e) {
+        console.error('Network error:', e);
       }
     }
-    async function updateStates() \{
-      try \{
-        const response = await fetch('{(trip our-url)}/states');
-        if (!response.ok) \{
-          console.error('HTTP error:', response.status);
+
+    async function delete() {
+      const current_key = select_script.value || '';
+      if ( !current_key ) return;
+      delete_key(current_key);
+    }
+
+    async function updateParams() {
+      const current_key = select_script.value || '';
+      if ( !current_key ) return;
+      const new_params = input_schedule.value;
+      try {
+        const response = await fetch(APIUrl, {
+          method: 'POST',
+          body: JSON.stringify({
+            action: {upd: {id: current_key, params: new_params}}
+          })
+        });
+        if ( !response.ok ) {
+          console.error('HTTP error: ' response.status);
         }
-        else \{
-          const data = await response.json();
-          states = data;
-          updateTextBox();
+        else {
+          const data = await.response.json();
+          if ( null === data ) {
+            updateErrorControl();
+          }
+          else {
+            updateErrorControl(data.error);
+          }
         }
-      } catch (error) \{
-        console.error('Network error:', error);
+      } catch (e) {
+        console.error('Network error:', e);
       }
     }
-    function SaveLastItem() \{
-      localStorage.setItem('lastChoice', select.value);
+
+    async function clearProduct() {
+      const current_key = select_script.value || '';
+      if ( !current_key ) return;
+      try {
+        const response = await fetch(APIUrl, {
+          method: 'POST',
+          body: JSON.stringify({
+            action: {clear: current_key}
+          })
+        });
+        if ( !response.ok ) {
+          console.error('HTTP error: ' response.status);
+        }
+        else {
+          updateErrorControl();
+        }
+      } catch (e) {
+        console.error('Network error:', e);
+      }
     }
-    //
-    const savedValue = localStorage.getItem('lastChoice');
-    if (savedValue && sources[savedValue]) \{
-      select.value = savedValue;
-      updateTextBox();
+
+    async function run() {
+      const current_key = select_script.value || '';
+      if ( !current_key ) return;
+      try {
+        const response = await fetch(APIUrl, {
+          method: 'POST',
+          body: JSON.stringify({
+            action: {run: current_key}
+          })
+        });
+        if ( !response.ok ) {
+          console.error('HTTP error: ' response.status);
+        }
+        else {
+          updateErrorControl();
+        }
+      } catch (e) {
+        console.error('Network error:', e);
+      }
     }
-    setInterval(updateStates, 3000);
-    formControl.addEventListener('submit', SaveLastItem);
-    formUpload.addEventListener('submit', SaveLastItem);
-    """
+
+    async function sendScript() {
+      const new_key = textarea_script_name.value;
+      const new_source = textarea_edit_source.value;
+      const overwrite = input_overwrite_box.checked;
+      const lang = select_language.value;
+      if ( Script[new_key] ) {
+        if ( !overwrite ) {
+          updateErrorSubmit('The script ${new_key} already exists');
+          return;
+        }
+        await delete_key(new_key);
+      }
+      try {
+        const response = await fetch(APIUrl, {
+          method: 'POST',
+          body: JSON.stringify({
+            action: {new: {id: new_key, lang: lang, txt: new_source}}
+          })
+        });
+        if ( !response.ok ) {
+          console.error('HTTP error: ' response.status);
+        }
+        else {
+          const data = await.response.json();
+          if ( null === data ) {
+            updateErrorSubmit();
+          }
+          else {
+            updateErrorSubmit(data.error);
+          }
+        }
+      } catch (e) {
+        console.error('Network error:', e);
+      }
+    }
+
+    function updateChoiceView() {
+      const keys = Object.keys(Scripts).sort();
+      const prev = select_script.value;
+      select_script.replaceChildren(
+        new Option('--Select--', '', true, true),
+        ...keys.map(v => new Option(v, v))
+      );
+      if (keys.includes(prev)) {
+        select_script.value = prev;
+      }
+      select_script.options[0].disabled = true;
+      updateView();
+    }
+    
+    async function longPoll() {
+      try {
+        const res = await fetch(PollUrl, { cache: 'no-store' });
+        if (res.status === 204) return;
+        const payload = await res.json();
+        if ( payload === null ) return;
+        if ( payload.full ) {
+          Scripts = {};
+          const strands = payload.full.strands;
+          const products = payload.full.products;
+          for (const [key, value] of Object.entries(strands)) {
+            Scripts[key] = {src: value.source,
+              running: value.running,
+              params: value.params,
+              has_product: null};
+          }
+          for (const [key, value] of Object.entries(products)) {
+            if ( Scripts[key] !== undefined ) {
+              Scripts[key].has_product = {success: value.how, when: value.when};
+            }
+          }
+          updateChoiceView();
+        }
+        else if ( payload.message ) {
+          if ( payload.message.error ) {
+            console.error(payload.message.error.why);
+            console.error(payload.message.error.what);
+          }
+        }
+      } catch (e) {
+        await new Promise(r => setTimeout(r, 2000));
+      } finally {
+        longPoll();
+      }
+    }
+    longPoll();
+    '''
   ::
   ++  style
+    =>  ..trip
     ^~  %-  trip
     '''
     [hidden] { display: none !important; }
@@ -1048,7 +1538,8 @@
     button:hover {
       background: #e0e0e0;
     }
-    #error-message {
+    #error-submit,
+    #error-control {
       margin-top: 5px;
       width: 80ch;
       background-color: #ffe6e6;
@@ -1060,7 +1551,7 @@
       font-family: monospace;
       white-space: pre-wrap;
     }
-    #show-product {
+    #message-control {
       //  display: none;
       margin-top: 5px;
       width: 80ch;
@@ -1178,15 +1669,139 @@
     }
     '''
   ::
-  ++  emit-stop
+  ++  poke-spider
+    |=  [=wire =cage]
+    ^-  card
+    [%pass wire %agent [our.bowl %spider] %poke cage]
+  ::
+  ++  watch-spider
+    |=  [=wire =path]
+    ^-  card
+    [%pass wire %agent [our.bowl %spider] %watch path]
+  ::
+  ++  send-shed
+    |=  [=path =shed:khan]
+    ^-  card
+    [%pass path %arvo %k %lard %base shed]
+  ::
+  ++  poke-self
+    |=  [=wire act=action]
+    ^-  card
+    [%pass wire %agent [our.bowl name-term] %poke orchestra-action+!>(act)]
+  ::
+  ++  take-action
+    |=  act=action
+    ^-  (quip card _state)
+    ?-    -.act
+        %new
+      ?:  (~(has by strands.state) id.act)
+        ~&  >>  %orchestra-id-already-present
+        `state
+      =/  hash=@uv  (shax (jam %orchestra eny.bowl act))
+      =,  act
+      =.  strands.state  (~(put by strands.state) id [src params | 0 ~ hash])
+      `state
+    ::
+        %del
+      =.  products.state  (~(del by products.state) id.act)
+      :_  state(strands (~(del by strands.state) id.act))
+      ~[(emit-spider-stop id.act)]
+    ::
+        %upd
+      ?~  rand=(~(get by strands.state) id.act)
+        ~&  >>  %orchestra-id-not-present
+        `state
+      =.  params.u.rand  params.act
+      =.  params-counter.u.rand  +(params-counter.u.rand)
+      =.  strands.state  (~(put by strands.state) id.act u.rand)
+      =.  strands.state  (strand-lens id.act (set-fires-at ~))
+      `state
+    ::
+        %wipe
+      `state(products ~)
+    ::
+        %run
+      ?~  rand=(~(get by strands.state) id.act)
+        ~&  >>  %orchestra-id-not-present
+        `state
+      ?:  is-running.u.rand
+        ~&  >>  %orchestra-id-already-running
+        `state
+      =.  strands.state
+        %+  strand-lens  id.act
+        :(comp (set-running-flag &) (set-fires-at ~) inc-params-counter)
+      ::
+      :_  state
+      ~[(emit-build id.act src.u.rand)]
+    ::
+        %run-timer
+      ?~  rand=(~(get by strands.state) id.act)
+        ~&  >>  %orchestra-id-not-present
+        `state
+      ?:  is-running.u.rand
+        ~&  >>  %orchestra-id-already-running
+        `state
+      =.  strands.state
+        %+  strand-lens  id.act
+        :(comp (set-running-flag &) (set-fires-at ~))
+      ::
+      :_  state
+      ~[(emit-build id.act src.u.rand)]
+    ::
+        %run-defer
+      ?~  rand=(~(get by strands.state) id.act)
+        ~&  >>  %orchestra-id-not-present
+        `state
+      =.  strands.state
+        (strand-lens id.act (comp inc-params-counter (set-fires-at `at.act)))
+      ::
+      :_  state  :_  ~
+      =;  wir  [%pass wir %arvo %b %wait at.act]
+      [ %timer
+        (scot %ud suspend-counter.state)
+        (scot %ud params-counter.u.rand)
+        (scot %uv hash.u.rand)
+        id.act
+      ]
+    ::
+        %clear
+      `state(products (~(del by products.state) id.act))
+    ::
+        %stop
+      ?~  rand=(~(get by strands.state) id.act)
+        ~&  >>  %orchestra-id-not-present
+        `state
+      =.  strands.state  (strand-lens id.act (set-running-flag |))
+      :_  state
+      ~[(emit-spider-stop id.act)]
+    ::
+    ==
+  ::
+  ++  emit-spider-stop
     |=  id=strand-id
     ^-  card
     (poke-spider /cancel %spider-stop !>([(make-tid id) |]))
   ::
-  ++  emit-run
+  ++  emit-build
     |=  [id=strand-id src=strand-source]
     ^-  card
     (send-shed build-strand+id (build-src id src))
+  ::
+  ++  emit-us-run
+    |=  id=strand-id
+    (poke-self /run %run id)
+  ::
+  ++  emit-us-run-timer
+    |=  id=strand-id
+    (poke-self /run %run-timer id)
+  ::
+  ++  emit-us-stop
+    |=  id=strand-id
+    (poke-self /stop %stop id)
+  ::
+  ++  emit-us-run-defer
+    |=  [id=strand-id at=time]
+    (poke-self /run %run-defer id at)
   ::
   ++  build-src
     |=  [id=strand-id src=strand-source]
@@ -1243,24 +1858,25 @@
     ::
     (pure:m !>(res))
   ::
-  ++  poke-spider
-    |=  [=wire =cage]
+  ++  send-fact-state
     ^-  card
-    [%pass wire %agent [our.bowl %spider] %poke cage]
+    [%give %fact ~[/state-updates] %state !>(persistent-state)]
   ::
-  ++  watch-spider
-    |=  [=wire =path]
+  ++  send-fact-message
+    |=  msg=message
     ^-  card
-    [%pass wire %agent [our.bowl %spider] %watch path]
+    [%give %fact ~[/state-updates] %message !>(msg)]
   ::
-  ++  send-shed
-    |=  [=path =shed:khan]
-    ^-  card
-    [%pass path %arvo %k %lard %base shed]
-  ::
-  ++  poke-self
-    |=  [=wire =cage]
-    ^-  card
-    [%pass wire %agent [our.bowl name-term] %poke cage]
-  --  ::  |helper-core
+  ++  bek  [our.bowl %base da+now.bowl]
+  ++  make-tid
+    |=  id=strand-id
+    ^-  tid:spider
+    =/  txt=tape  (trip (spat id))
+    =.  txt  (turn txt |=(=char ?:(=('/' char) '-' char)))
+    %:  rap  3
+      'orchestra-'  (scot %ud version.state)
+      '-'  (scot %ud suspend-counter.state)
+      txt
+    ==
+  --
 --
