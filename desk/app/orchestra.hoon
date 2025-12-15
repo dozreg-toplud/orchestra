@@ -7,29 +7,8 @@
 =*  name-mold  $orchestra
 =/  our-url    (cat 3 '/apps/' name-term)
 =/  seconds-mask  (mix (not 7 1 0) (not 6 1 0))
+=/  polling-timeout=@dr  ~s20
 |%
-+$  versioned-persistent-state
-  $%  state-0
-  ==
-::
-+$  strand-state
-  $+  strand-state
-  $:  src=strand-source
-      params=strand-params
-      is-running=?
-      params-counter=@
-      fires-at=(unit @da)
-      hash=@uv
-  ==
-::
-+$  state-0
-  $+  state-0
-  $:  version=%0
-      suspend-counter=@
-      strands=(map strand-id strand-state)
-      products=(map strand-id (pair (each vase tang) time))
-  ==
-::
 +$  state-diff
   $+  state-diff
   $:  strands=strand-diff
@@ -74,9 +53,6 @@
   ==
 ::
 +$  poll-responder-yield  [load=(unit poll-payload) new=persistent]
-+$  message
-  $%  [%error why=@t what=tang]
-  ==
 ::
 +$  request-to-validate
   $%  [%action a=action-to-validate]
@@ -101,6 +77,20 @@
 --
 ::  lib core
 |%
+++  send-wait-prefix
+  |=  [until=@da pre=wire]
+  =/  m  (strand:rand ,~)
+  ^-  form:m
+  %-  send-raw-card:sio
+  [%pass (snoc pre (scot %da until)) %arvo %b %wait until]
+::
+++  send-rest-prefix
+  |=  [until=@da pre=wire]
+  =/  m  (strand:rand ,~)
+  ^-  form:m
+  %-  send-raw-card:sio
+  [%pass (snoc pre (scot %da until)) %arvo %b %rest until]
+::
 ++  finally-do
   |*  a=mold
   =/  m1  (strand:rand a)
@@ -158,7 +148,14 @@
         %upd
       ;<  params=strand-params  biff-each
         =/  e  'syntax error in script parameters:'
-        ((apply-rule strand-params) strand-params-rule txt.a.r e)
+        =/  rule
+          %-  full
+          ;~  pose
+            (stag ~ dr-rule)
+            (easy ~)
+          ==
+        ::
+        ((apply-rule strand-params) rule txt.a.r e)
       ::
       &+[%action %upd id.a.r params]
     ==
@@ -306,7 +303,7 @@
   |=  [[k=strand-id v=(pair (each vase tang) time)] acc=_out]
   ^+  acc
   =/  old=(unit (pair (each vase tang) time))  (~(get by old) k)
-  ?:  |(?=(~ old) =(u.old v))  acc
+  ?:  &(?=(^ old) =(u.old v))  acc
   (~(put by acc) k %new v)
 ::
 ++  enjs
@@ -632,10 +629,12 @@
     =^  cards  state
       ?+    mark  (on-poke:def mark vase)
           %handle-http-request
+        :: ~>  %bout.[0 'poke http']
         (handle-http:hc !<([@ta =inbound-request:eyre] vase))
       ::
           %orchestra-action
         ?>  =(src.bowl our.bowl)
+        :: ~>  %bout.[0 'poke noun']
         (take-action:hc !<(action vase))
       ==
     ::
@@ -692,7 +691,7 @@
         =+  !<(res=(each vase tang) q.p.p.sign-arvo)
         ?:  ?=(%| -.res)
           =.  products.state
-            (~(put by products.state) id |+['build faiked' p.res] now.bowl)
+            (~(put by products.state) id |+['build failed' p.res] now.bowl)
           ::
           =.  strands.state
             (strand-lens:hc id (comp (set-running-flag |) (set-fires-at ~)))
@@ -840,7 +839,8 @@
           ?+    p.cage.sign  (on-agent:def wire sign)
               %thread-fail
             =+  !<(res=(pair term tang) q.cage.sign)
-            =.  products.state  (~(put by products.state) id |+q.res now.bowl)
+            =/  tag=tang  ['thread stopped or crashed' q.res]
+            =.  products.state  (~(put by products.state) id |+tag now.bowl)
             `this
           ::
               %thread-done
@@ -902,7 +902,6 @@
         =/  stamp=time  (slav %ui time.site)
         =^  jon=(unit json)  state
           ?~  stash=(~(get by polling.state) stamp)
-            ~&  %first-poll
             =.  polling.state
               (~(put by polling.state) stamp |+persistent-state)
             ::
@@ -925,7 +924,6 @@
           [%apps name-mold %api ~]
         ?.  authenticated.inbound-request  `state
         ?~  body.request.inbound-request   `state
-        ~&  `@t`q.u.body.request.inbound-request
         =/  jin=json  (need (de:json:html q.u.body.request.inbound-request))
         =/  rev=request-to-validate  (request-to-validate:dejs jin)
         =/  rer=request-error  (validate-request rev)
@@ -1009,10 +1007,11 @@
     ^-  form:m
     =/  wir=wire  /state-updates
     ;<  ~        bind:m  (watch-our:sio wir name-term wir)
-    %+  (finally-do poll-responder-yield)  (leave-our:sio wir name-term)
     ;<  now=@da  bind:m  get-time:sio
-    =/  till=@da  (add now ~s15)
-    ;<  ~  bind:m  (send-wait:sio till)
+    =/  till=@da  (add now polling-timeout)
+    =/  time-wir=wire  /poll-timeout
+    ;<  ~  bind:m  (send-wait-prefix till time-wir)
+    %+  (finally-do poll-responder-yield)  (leave-our:sio wir name-term)
     |-  ^-  form:m
     %-  (await-earliest poll-responder-yield)
     :~
@@ -1025,6 +1024,7 @@
         =+  !<(new=persistent q.cage)
         ?~  diff=(get-state-diff stash new)
           $(stash new)
+        ;<  ~  bind:m  (send-rest-prefix till time-wir)
         (pure:m `[%diff u.diff] new)
       ::
           %message
@@ -1059,7 +1059,7 @@
               ;span.light;
             ==
           ::
-            ;button#delete(type "button", onclick "delete()"): Delete
+            ;button#delete(type "button", onclick "deleteScript()"): Delete
             ;button#show-result(type "button", onclick "showResult()"): Load result
             ;div#update-params
               ;input#schedule-field
@@ -1075,6 +1075,8 @@
           ::
             ;button#update-schedule(name "action", type "button", onclick "clearProduct()"): Clear product
             ;button#update-schedule(name "action", type "button", onclick "run()"): Run
+            ;button#update-schedule(name "action", type "button", onclick "stop()"): Stop
+            ;button#update-schedule(name "action", type "button", onclick "edit()"): Edit
           ==
         ==
       ::
@@ -1183,9 +1185,15 @@
               : 'red';
         is_blinking = (script.fires !== null) && (color !== 'yellow');
         tooltip = Tips[color] + (( is_blinking ) ? ", awaiting timer" : "");
-        if (textBox.textContent !== textbox_content) {
-          textBox.textContent = textbox_content;
+        if ( script.params.run_every ) {
+          textbox_content = `@@  ${script.params.run_every}\n` + textbox_content;
         }
+      }
+      else {
+        textbox_content = 'Script will appear here...';
+      }
+      if (pre_display_source.textContent !== textbox_content) {
+        pre_display_source.textContent = textbox_content;
       }
       span_LED.setAttribute('data-status', color);
       span_LED.setAttribute('data-tooltip', tooltip);
@@ -1194,16 +1202,16 @@
 
     function updateLangPlaceholder() {
       const lang = select_language.value;
-      if ('js' == lang) \{
-        textScript.placeholder = `@@  ~h1  //  schedule, optional @da
+      if ('js' == lang) {
+        textarea_edit_source.placeholder = `@@  ~h1  //  schedule, optional @da
     const urbit = require("urbit_thread");
-    module.exports = () => \{
+    module.exports = () => {
       console.log("Hello");
       return "done";
     }`;
       }
-      else \{
-        textScript.placeholder = `@@  ~h1                   ::  schedule, optional @da
+      else {
+        textarea_edit_source.placeholder = `@@  ~h1                   ::  schedule, optional @da
     ##  name=/desk/path/hoon  ::  comma-separated imports, optional
     ::
     ...
@@ -1255,7 +1263,7 @@
           })
         });
         if ( !response.ok ) {
-          console.error('HTTP error: ' response.status);
+          console.error('HTTP error: ', response.status);
         }
         else {
           const data = await response.json();
@@ -1280,17 +1288,18 @@
           })
         });
         if ( !response.ok ) {
-          console.error('HTTP error: ' response.status);
+          console.error('HTTP error: ', response.status);
         }
         else {
           updateErrorControl();
+          updateView();
         }
       } catch (e) {
         console.error('Network error:', e);
       }
     }
 
-    async function delete() {
+    async function deleteScript() {
       const current_key = select_script.value || '';
       if ( !current_key ) return;
       delete_key(current_key);
@@ -1308,10 +1317,10 @@
           })
         });
         if ( !response.ok ) {
-          console.error('HTTP error: ' response.status);
+          console.error('HTTP error: ', response.status);
         }
         else {
-          const data = await.response.json();
+          const data = await response.json();
           if ( null === data ) {
             updateErrorControl();
           }
@@ -1335,7 +1344,7 @@
           })
         });
         if ( !response.ok ) {
-          console.error('HTTP error: ' response.status);
+          console.error('HTTP error: ', response.status);
         }
         else {
           updateErrorControl();
@@ -1356,7 +1365,28 @@
           })
         });
         if ( !response.ok ) {
-          console.error('HTTP error: ' response.status);
+          console.error('HTTP error: ', response.status);
+        }
+        else {
+          updateErrorControl();
+        }
+      } catch (e) {
+        console.error('Network error:', e);
+      }
+    }
+
+    async function stop() {
+      const current_key = select_script.value || '';
+      if ( !current_key ) return;
+      try {
+        const response = await fetch(APIUrl, {
+          method: 'POST',
+          body: JSON.stringify({
+            action: {stop: current_key}
+          })
+        });
+        if ( !response.ok ) {
+          console.error('HTTP error: ', response.status);
         }
         else {
           updateErrorControl();
@@ -1371,9 +1401,9 @@
       const new_source = textarea_edit_source.value;
       const overwrite = input_overwrite_box.checked;
       const lang = select_language.value;
-      if ( Script[new_key] ) {
+      if ( Scripts[new_key] ) {
         if ( !overwrite ) {
-          updateErrorSubmit('The script ${new_key} already exists');
+          updateErrorSubmit(`The script ${new_key} already exists`);
           return;
         }
         await delete_key(new_key);
@@ -1386,12 +1416,14 @@
           })
         });
         if ( !response.ok ) {
-          console.error('HTTP error: ' response.status);
+          console.error('HTTP error: ', response.status);
         }
         else {
-          const data = await.response.json();
+          const data = await response.json();
           if ( null === data ) {
             updateErrorSubmit();
+            textarea_edit_source.value = '';
+            textarea_script_name.value = '';
           }
           else {
             updateErrorSubmit(data.error);
@@ -1415,6 +1447,14 @@
       select_script.options[0].disabled = true;
       updateView();
     }
+
+    function edit() {
+      const current_key = select_script.value || '';
+      if ( !current_key ) return;
+      textarea_script_name.value = current_key;
+      textarea_edit_source.value = pre_display_source.textContent;
+      input_overwrite_box.checked = true;
+    }
     
     async function longPoll() {
       try {
@@ -1430,6 +1470,7 @@
             Scripts[key] = {src: value.source,
               running: value.running,
               params: value.params,
+              fires: value.fires,
               has_product: null};
           }
           for (const [key, value] of Object.entries(products)) {
@@ -1682,7 +1723,7 @@
   ++  send-shed
     |=  [=path =shed:khan]
     ^-  card
-    [%pass path %arvo %k %lard %base shed]
+    [%pass path %arvo %k %lard %orchestra shed]
   ::
   ++  poke-self
     |=  [=wire act=action]
@@ -1713,6 +1754,7 @@
         `state
       =.  params.u.rand  params.act
       =.  params-counter.u.rand  +(params-counter.u.rand)
+      =.  fires-at.u.rand  ~
       =.  strands.state  (~(put by strands.state) id.act u.rand)
       =.  strands.state  (strand-lens id.act (set-fires-at ~))
       `state
@@ -1771,7 +1813,11 @@
       ?~  rand=(~(get by strands.state) id.act)
         ~&  >>  %orchestra-id-not-present
         `state
-      =.  strands.state  (strand-lens id.act (set-running-flag |))
+      =.  run-every.params.u.rand  ~
+      =.  fires-at.u.rand  ~
+      =.  is-running.u.rand  |
+      =.  params-counter.u.rand  +(params-counter.u.rand)
+      =.  strands.state  (~(put by strands.state) id.act u.rand)
       :_  state
       ~[(emit-spider-stop id.act)]
     ::
@@ -1785,7 +1831,13 @@
   ++  emit-build
     |=  [id=strand-id src=strand-source]
     ^-  card
-    (send-shed build-strand+id (build-src id src))
+    =/  wir=wire
+      [ %build-strand
+        (scot %ud suspend-counter.state)
+        id
+      ]
+    ::
+    (send-shed wir (build-src id src))
   ::
   ++  emit-us-run
     |=  id=strand-id
@@ -1835,7 +1887,11 @@
         %-  pure:m
         ^-  (each vase tang)
         =/  [=hair res=(unit [=hoon =nail])]
-          %.  [[start-line 1] (trip txt.src)]
+          %-  need
+          %-  ~(mole vi |)
+          =>  [start-line=start-line txt=txt.src id=id ..strand-diff]
+          |.  ~>  %memo./user
+          %.  [[start-line 1] (trip txt)]
           %-  full
           %+  ifix  [gay gay]
           tall:(vang & [name-term %hoon-thread id])
@@ -1867,7 +1923,7 @@
     ^-  card
     [%give %fact ~[/state-updates] %message !>(msg)]
   ::
-  ++  bek  [our.bowl %base da+now.bowl]
+  ++  bek  [our.bowl name-term da+now.bowl]
   ++  make-tid
     |=  id=strand-id
     ^-  tid:spider
