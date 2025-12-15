@@ -91,6 +91,23 @@
   %-  send-raw-card:sio
   [%pass (snoc pre (scot %da until)) %arvo %b %rest until]
 ::
+++  take-wake-prefix
+  |=  [until=@da pre=wire]
+  =/  m  (strand:rand ,~)
+  ^-  form:m
+  |=  tin=strand-input:strand:rand
+  ?+    in.tin  `[%skip ~]
+      ~  `[%wait ~]
+  ::
+      [~ %sign * %behn %wake *]
+    =/  wir=wire  (snoc pre (scot %da until))
+    ?.  =(wire.u.in.tin wir)
+      `[%skip ~]
+    ?~  error.sign-arvo.u.in.tin
+      `[%done ~]
+    `[%fail %timer-error u.error.sign-arvo.u.in.tin]
+  ==
+::
 ++  finally-do
   |*  a=mold
   =/  m1  (strand:rand a)
@@ -148,13 +165,7 @@
         %upd
       ;<  params=strand-params  biff-each
         =/  e  'syntax error in script parameters:'
-        =/  rule
-          %-  full
-          ;~  pose
-            (stag ~ dr-rule)
-            (easy ~)
-          ==
-        ::
+        =/  rule  (full (punt dr-rule))
         ((apply-rule strand-params) rule txt.a.r e)
       ::
       &+[%action %upd id.a.r params]
@@ -1015,7 +1026,7 @@
     |-  ^-  form:m
     %-  (await-earliest poll-responder-yield)
     :~
-      ;<  ~  bind:m  (take-wake:sio `till)
+      ;<  ~  bind:m  (take-wake-prefix till time-wir)
       (pure:m ~ stash)
     ::
       ;<  =cage  bind:m  (take-fact:sio wir)
@@ -1457,8 +1468,14 @@
     }
     
     async function longPoll() {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 30_000);
       try {
-        const res = await fetch(PollUrl, { cache: 'no-store' });
+        const res = await fetch(PollUrl, {
+          cache: 'no-store',
+          signal: controller.signal,
+        });
+
         if (res.status === 204) return;
         const payload = await res.json();
         if ( payload === null ) return;
@@ -1480,16 +1497,15 @@
           }
           updateChoiceView();
         }
-        else if ( payload.message ) {
-          if ( payload.message.error ) {
-            console.error(payload.message.error.why);
-            console.error(payload.message.error.what);
-          }
+        else if ( payload.message?.error ) {
+          console.error(payload.message.error.why);
+          console.error(payload.message.error.what);
         }
       } catch (e) {
         await new Promise(r => setTimeout(r, 2000));
       } finally {
-        longPoll();
+        clearTimeout(timeoutId);
+        setTimeout(longPoll, 0);
       }
     }
     longPoll();
