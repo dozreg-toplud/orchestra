@@ -1483,44 +1483,45 @@
     }
     
     async function longPoll() {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 30_000);
-      try {
-        const res = await fetch(PollUrl, {
-          cache: 'no-store',
-          signal: controller.signal,
-        });
+      while ( true ) {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 30_000);
+        try {
+          const res = await fetch(PollUrl, {
+            cache: 'no-store',
+            signal: controller.signal,
+          });
 
-        if (res.status === 204) return;
-        const payload = await res.json();
-        if ( payload === null ) return;
-        if ( payload.full ) {
-          Scripts = {};
-          const strands = payload.full.strands;
-          const products = payload.full.products;
-          for (const [key, value] of Object.entries(strands)) {
-            Scripts[key] = {src: value.source,
-              running: value.running,
-              params: value.params,
-              fires: value.fires,
-              has_product: null};
-          }
-          for (const [key, value] of Object.entries(products)) {
-            if ( Scripts[key] !== undefined ) {
-              Scripts[key].has_product = {success: value.how, when: value.when};
+          if (res.status === 204) continue;
+          const payload = await res.json();
+          if ( payload === null ) continue;
+          if ( payload.full ) {
+            Scripts = {};
+            const strands = payload.full.strands;
+            const products = payload.full.products;
+            for (const [key, value] of Object.entries(strands)) {
+              Scripts[key] = {src: value.source,
+                running: value.running,
+                params: value.params,
+                fires: value.fires,
+                has_product: null};
             }
+            for (const [key, value] of Object.entries(products)) {
+              if ( Scripts[key] !== undefined ) {
+                Scripts[key].has_product = {success: value.how, when: value.when};
+              }
+            }
+            updateChoiceView();
           }
-          updateChoiceView();
+          else if ( payload.message?.error ) {
+            console.error(payload.message.error.why);
+            console.error(payload.message.error.what);
+          }
+        } catch (e) {
+          await new Promise(r => setTimeout(r, 2000));
+        } finally {
+          clearTimeout(timeoutId);
         }
-        else if ( payload.message?.error ) {
-          console.error(payload.message.error.why);
-          console.error(payload.message.error.what);
-        }
-      } catch (e) {
-        await new Promise(r => setTimeout(r, 2000));
-      } finally {
-        clearTimeout(timeoutId);
-        setTimeout(longPoll, 0);
       }
     }
     longPoll();
