@@ -613,22 +613,29 @@
     ::  because we want to create the stop cards before the imminent
     ::  suspend counter increment
     ::
-    =^  cards-stop=(list card)  strands.state
-      |-  ^-  (quip card _strands.state)
+    =^  running=(list strand-id)  strands.state
+      |-  ^-  (quip strand-id _strands.state)
       ?~  strands.state  [~ ~]
-      =/  n-cards=(list card)
+      =/  n=(list strand-id)
         ?.  is-running.q.n.strands.state  ~
-        ~[(emit-spider-stop:hc p.n.strands.state)]
+        ~[p.n.strands.state]
       ::
-      =^  l-cards  l.strands.state  $(strands.state l.strands.state)
-      =^  r-cards  r.strands.state  $(strands.state r.strands.state)
-      [(zing n-cards l-cards r-cards ~) strands.state(is-running.q.n |)]
+      =^  l  l.strands.state  $(strands.state l.strands.state)
+      =^  r  r.strands.state  $(strands.state r.strands.state)
+      [(zing n l r ~) strands.state(is-running.q.n |)]
+    ::
+    =/  cards-stop=(list card)  (turn running emit-spider-stop:hc)
     ::  invalidate old timers and routines
     ::
     =.  suspend-counter.state  +(suspend-counter.state)
+    ::  run all threads that were in the middle of running
+    ::
+    =/  cards-run-1=(list card)
+      (turn running (curr emit-us-run-defer:hc (add now.bowl ~s1)))
+    ::
     ::  run all threads that were waiting for a timer
     ::
-    =/  cards-run=(list card)
+    =/  cards-run-2=(list card)
       %-  ~(rep by strands.state)
       |=  [[k=strand-id v=strand-state] acc=(list card)]
       ^+  acc
@@ -639,7 +646,7 @@
     :_  this
     =/  wir  /cleanup/(scot %ud suspend-counter.state)
     :-  [%pass wir %arvo %b %wait (add now.bowl ~h1)]
-    (weld cards-stop cards-run)
+    (zing cards-stop cards-run-1 cards-run-2 ~)
   ::
   ++  on-poke
     |=  [=mark =vase]
