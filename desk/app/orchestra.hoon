@@ -432,6 +432,7 @@
         params+(strand-params params.s)
         running+b+is-running.s
         fires+(jall (bind fires-at.s urtime-sec))
+        lang+s+-.src.s
     ==
   ::
   ++  strand-params
@@ -1179,6 +1180,7 @@
     //  Scripts: script_id: string => {src: string,
     //                                 running: bool,
     //                                 params: {run_every: string},
+    //                                 lang: string,
     //                                 fires: null | string,
     //                                 has_product: null
     //                                              | {success: bool,
@@ -1492,6 +1494,7 @@
       textarea_script_name.value = current_key;
       textarea_edit_source.value = pre_display_source.textContent;
       input_overwrite_box.checked = true;
+      select_language.value = Scripts[current_key].lang;
     }
     
     async function longPoll() {
@@ -1516,6 +1519,7 @@
                 running: value.running,
                 params: value.params,
                 fires: value.fires,
+                lang: value.lang,
                 has_product: null};
             }
             for (const [key, value] of Object.entries(products)) {
