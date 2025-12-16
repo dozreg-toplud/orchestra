@@ -859,7 +859,7 @@
             %fact
           ?.  =(suspend-counter suspend-counter.state)
             `this
-          ?.  (~(has by strands.state) id)
+          ?~  rand=(~(get by strands.state) id)
             `this
           =.  strands.state  (strand-lens:hc id (set-running-flag |))
           ?+    p.cage.sign  (on-agent:def wire sign)
@@ -871,7 +871,19 @@
           ::
               %thread-done
             =.  products.state
-              (~(put by products.state) id &+q.cage.sign now.bowl)
+              %+  ~(put by products.state)  id
+              :_  now.bowl
+              ?:  ?=(%hoon -.src.u.rand)  &+q.cage.sign
+              ::  %js
+              ::
+              =/  js-res
+                %-  mole  |.
+                !<  [%0 out=(each cord (pair cord cord))]
+                q.cage.sign
+              ::
+              ?~  js-res  &+q.cage.sign
+              ?:  ?=(%& -.out.u.js-res)  &+q.cage.sign
+              |+~[p.p.out.u.js-res q.p.out.u.js-res]
             ::
             `this
           ==
