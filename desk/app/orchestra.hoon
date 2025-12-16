@@ -1810,9 +1810,9 @@
       ?~  rand=(~(get by strands.state) id.act)
         ~&  >>  %orchestra-id-not-present
         `state
-      =.  strands.state
-        (strand-lens id.act (comp inc-params-counter (set-fires-at `at.act)))
-      ::
+      =.  params-counter.u.rand  +(params-counter.u.rand)
+      =.  fires-at.u.rand  `at.act
+      =.  strands.state  (~(put by strands.state) id.act u.rand)
       :_  state  :_  ~
       =;  wir  [%pass wir %arvo %b %wait at.act]
       [ %timer
