@@ -77,6 +77,13 @@
 --
 ::  lib core
 |%
+++  defer-shed
+  |=  =shed:khan
+  ^-  shed:khan
+  =/  m  (strand:rand vase)
+  ;<  ~  bind:m  (sleep:sio `@`2)
+  shed
+::
 ++  send-wait-prefix
   |=  [until=@da pre=wire]
   =/  m  (strand:rand ,~)
@@ -709,7 +716,8 @@
           ::
           `this
         =/  tid  (make-tid:hc id)
-        =/  args=inline-args:spider  [~ `tid bek:hc !<(shed:khan p.res)]
+        =+  !<(=shed:khan p.res)
+        =/  args=inline-args:spider  [~ `tid bek:hc (defer-shed shed)]
         =/  wir-watch
           [ %run-watch
             (scot %ud suspend-counter.state)
