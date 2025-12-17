@@ -74,6 +74,69 @@
       ;<  =bowl:spider  bind:m  get-bowl:sio
       %-  pure:m
       .^(mold what (scot %p our.bowl) whom (scot %da now.bowl) pax)
+    ::  en:json:html with fixed escape logic for usage in doq JS string literals
+    ::
+    ++  en-json-fixed
+      |^  |=  jon=json
+          ^-  cord
+          (rap 3 (flop (onto jon ~)))
+      ::
+      ++  onto
+        |=  [val=json out=(list @t)]
+        ^+  out
+        ?~  val  ['null' out]
+        ?-    -.val
+            %a
+          ?~  p.val  ['[]' out]
+          =.  out    ['[' out]
+          !.
+          |-  ^+  out
+          =.  out  ^$(val i.p.val)
+          ?~(t.p.val [']' out] $(p.val t.p.val, out [',' out]))
+        ::
+            %b
+          [?:(p.val 'true' 'false') out]
+        ::
+            %n
+          [p.val out]
+        ::
+            %s
+          [(scap p.val) out]
+        ::
+            %o
+          =/  viz  ~(tap by p.val)
+          ?~  viz  ['{}' out]
+          =.  out  ['{' out]
+          !.
+          |-  ^+  out
+          =.  out  ^$(val q.i.viz, out [':' [(scap p.i.viz) out]])
+          ?~(t.viz ['}' out] $(viz t.viz, out [',' out]))
+        ==
+      ::
+      ++  scap
+        |=  val=@t
+        ^-  @t
+        =/  out=(list @t)  ['"' ~]
+        =/  len  (met 3 val)
+        =|  [i=@ud pos=@ud]
+        |-  ^-  @t
+        ?:  =(len i)
+          (rap 3 (flop ['"' (rsh [3 pos] val) out]))
+        =/  car  (cut 3 [i 1] val)
+        ?:  ?&  (gte car 0x20)
+                (lte car 0x7e)
+                !=(car '"')
+                !=(car '\\')
+            ==
+          $(i +(i))
+        =/  cap
+          ?+  car  (crip '\\' 'u' ((x-co 4):co car))
+            %0xa    '\\n'
+            %'"'   '\\"'
+            %'\\'  '\\\\'
+          ==
+        $(i +(i), pos +(i), out [cap (cut 3 [pos (sub i pos)] val) out])
+      --
     ::    
     ++  function-table
       ^-  (list table-entry)
@@ -117,7 +180,7 @@
       =/  m-js  (script:lia-sur:wasm @ acc-mold)
       =/  m-rand  (strand (list lv))
       :~
-        ::  console.log
+      ::::  console.log
         ::
         :_  ~
         :-  ~
@@ -1878,22 +1941,14 @@
       =,  arr
       ;<  acc=acc-mold  try:m  get-acc
       =+  (get-js-ctx acc)
+      ::  string of JSON
       ::
-      =/  jon-cod=cord  (en:json:html jon)
-      ::  escape backslashes and single quotes in JSON.parse
+      =/  jon-cod=cord  (en-json-fixed jon)
+      ::  string of string of JSON
       ::
-      =.  jon-cod
-        %+  rap  3
-        %+  rash  jon-cod
-        ^~  %-  star
-        ;~  pose
-          (cold '\\\\' bas)  ::  \ -> \\
-          (cold '\\\'' soq)  ::  ' -> \'
-          next
-        ==
-      ::
+      =.  jon-cod  (scap:en-json-fixed jon-cod)
       =/  code=cord
-        (rap 3 'JSON.parse(\'' jon-cod '\')' ~)
+        (rap 3 'JSON.parse(' jon-cod ')' ~)
       ::
       ;<  res-u=@  try:m
         %:  ding  'QTS_Eval'
