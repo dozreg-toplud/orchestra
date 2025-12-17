@@ -202,14 +202,14 @@
           (return:m `p.res)
         ::
         =/  get-txt-file-ted
-          |=  pax=path
+          |=  pax=(pole knot)
           =/  m  m-rand
           ^-  form:m
-          =*  prefix  %scripts  ::  XX remove prefix, read anywhere?
+          ?.  ?=([desk=@tas rest=*] pax)  (pure:m ~)
           ;<  bol=bowl:rand  bind:m  get-bowl:sio
-          =/  bek=beak  [our %base %da now]:bol
+          =/  bek=beak  [our desk.pax %da now]:bol
           ;<  =riot:clay  bind:m
-            (warp:sio p.bek q.bek ~ %sing %x r.bek [prefix pax])
+            (warp:sio p.bek q.bek ~ %sing %x r.bek rest.pax)
           ::
           ?~  riot  (pure:m ~)
           ?.  =(%txt p.r.u.riot)
@@ -256,10 +256,10 @@
           |=  [pax=path txt=cord]
           =/  m  (strand ,~)
           ^-  form:m
-          =*  prefix  %scripts
+          ?.  ?=([desk=@tas rest=*] pax)  (pure:m ~)
           =/  wan=wain  (to-wain:format txt)
           =/  not=note-arvo
-            [%c [%info %base %& [prefix^pax %ins %txt !>(wan)]~]]
+            [%c [%info desk.pax %& [rest.pax %ins %txt !>(wan)]~]]
           ::
           (send-raw-card:sio [%pass / %arvo not])
         ::
