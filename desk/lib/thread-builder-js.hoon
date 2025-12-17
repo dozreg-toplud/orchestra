@@ -207,7 +207,7 @@
           ^-  form:m
           ?.  ?=([desk=@tas rest=*] pax)  (pure:m ~)
           ;<  bol=bowl:rand  bind:m  get-bowl:sio
-          =/  bek=beak  [our desk.pax %da now]:bol
+          =/  bek=beak  [our.bol desk.pax %da now.bol]
           ;<  =riot:clay  bind:m
             (warp:sio p.bek q.bek ~ %sing %x r.bek rest.pax)
           ::
@@ -253,7 +253,7 @@
           (return:m ~)
         ::
         =/  set-txt-file-ted
-          |=  [pax=path txt=cord]
+          |=  [pax=(pole knot) txt=cord]
           =/  m  (strand ,~)
           ^-  form:m
           ?.  ?=([desk=@tas rest=*] pax)  (pure:m ~)
