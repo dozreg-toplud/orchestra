@@ -2140,7 +2140,6 @@
         =/  i  i.list-js-imports
         ?.  ?=([%'urbit_thread' @ ~] name.i)
           $(list-js-imports t.list-js-imports)
-        ~&  ['register at urbit_thread' i.t.name.i mag-w.i]
         ;<  *  try:m  (register-function i.t.name.i mag-w.i urb-u)
         $(list-js-imports t.list-js-imports)
       ::
@@ -2177,7 +2176,6 @@
         =/  i  i.list-js-imports
         ?.  ?=([%'urbit_thread' %'tlon' @ ~] name.i)
           $(list-js-imports t.list-js-imports)
-        ~&  ['register at tlon' i.t.t.name.i mag-w.i]
         ;<  *  try:m  (register-function i.t.t.name.i mag-w.i tlon-u)
         $(list-js-imports t.list-js-imports)
       ::
@@ -2214,7 +2212,6 @@
         =/  i  i.list-js-imports
         ?.  ?=([%'urbit_thread' %'pals' @ ~] name.i)
           $(list-js-imports t.list-js-imports)
-        ~&  ['register at pals' i.t.t.name.i mag-w.i]
         ;<  *  try:m  (register-function i.t.t.name.i mag-w.i pals-u)
         $(list-js-imports t.list-js-imports)
       ::
@@ -2255,7 +2252,7 @@
       ;<  ~          try:m  (set-acc !>(tor))
       ;<  global-this-u=@  try:m  (call-1 'QTS_GetGlobalObject' ctx-u ~)
       ;<  undef-u=@        try:m  (call-1 'QTS_GetUndefined' ~)
-      ::  require registration is special-cased
+      ::  `require` registration is special-cased
       ::
       ;<  *  try:m  (register-function 'require' 0 global-this-u)
       ;<  *                try:m
@@ -2265,7 +2262,6 @@
         =/  i  i.list-js-imports
         ?.  ?=([@ ~] name.i)
           $(list-js-imports t.list-js-imports)
-        ~&  ['register at root' i.name.i mag-w.i]
         ;<  *  try:m  (register-function i.name.i mag-w.i global-this-u)
         $(list-js-imports t.list-js-imports)
       ::
@@ -2323,7 +2319,6 @@
         =/  i  i.list-js-imports
         ?.  ?=([%console @ ~] name.i)
           $(list-js-imports t.list-js-imports)
-        ~&  ['register at console' i.t.name.i mag-w.i]
         ;<  *  try:m  (register-function i.t.name.i mag-w.i console-u)
         $(list-js-imports t.list-js-imports)
       ::
