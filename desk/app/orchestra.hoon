@@ -1161,6 +1161,10 @@
         ==
       ::
         ;script: {(js-code stamp)}
+        ;br;  ;br;
+        ;p
+          ;a(href "https://github.com/dozreg-toplud/threads-js/blob/master/desk/docs.md", target "_blank"): urbit_thread documentation for scripts in JavaScript
+        ==
       ==
     ==
   ::
