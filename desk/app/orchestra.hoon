@@ -655,12 +655,10 @@
     =^  cards  state
       ?+    mark  (on-poke:def mark vase)
           %handle-http-request
-        :: ~>  %bout.[0 'poke http']
         (handle-http:hc !<([@ta =inbound-request:eyre] vase))
       ::
           %orchestra-action
         ?>  =(src.bowl our.bowl)
-        :: ~>  %bout.[0 'poke noun']
         (take-action:hc !<(action vase))
       ==
     ::
