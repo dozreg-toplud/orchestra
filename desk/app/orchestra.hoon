@@ -827,7 +827,7 @@
           ==
         ::
         :_  this
-        ?~  response  (response:schooner eyre-id.wire 204 ~ json+b+&)
+        ?~  response  (response:schooner eyre-id.wire 204 ~ none+~)
         (response:schooner eyre-id.wire 200 ~ json+u.response)
       ::
           [%cleanup suspend=@ta ~]
