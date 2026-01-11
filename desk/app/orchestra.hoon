@@ -842,7 +842,10 @@
           ?:  stale.v  acc
           (~(put by acc) k v(stale &))
         ::
-        :_  this  :_  ~
+        :_  this
+        ^-  (list card)
+        =-  ?^  polling.state  -  [[%give %kick ~[/state-updates] ~] -]
+        :_  ~
         [%pass wire %arvo %b %wait (add now.bowl ~h1)]
       ==
     ::
